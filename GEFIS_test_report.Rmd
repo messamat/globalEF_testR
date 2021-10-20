@@ -1,0 +1,29 @@
+---
+title: "GEFIS test: analytical report"
+author: "Mathis L. Messager"
+date: "10/20/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source('R/packages.R')
+source('R/functions.R')
+```
+
+## General summary statistics
+```{r load-data}
+tar_load(efp)
+```
+
+Distance between sites after adjustment and nearest river reach in HydroRIVERS:  
+```{r plot-dist}
+qplot(efp$station_river_distance)
+```
+
+Sites that are more than 500 m from the nearest river reach in HydroRivers:
+`r flextable(efp[station_river_distance > 500,1:20])`
+
+Number of unique sites: `r efp[!duplicated(efp[, .(POINT_X, POINT_Y)]), .N]`  
+Number of EF assessments: 
+Number of countries: `r efp[, length(unique(Country))]`
