@@ -19,6 +19,12 @@ list(
   ),
   
   tar_target(
+    inp_gefistats,
+    file.path(resdir, "efsites_gefisstats.csv"),
+    format = 'file'
+  ),
+  
+  tar_target(
     efp,
     as.data.table(
       sf::st_read(dsn = dirname(inp_efp),
@@ -29,5 +35,12 @@ list(
   tar_target(
     eftab,
     readformat_eftab(inp_eftab)
+  ),
+  
+  tar_target(
+    eftab_gefis,
+    joineftab_gefis(in_eftab = efp,  ###################UPDATE
+                    inp_gefistats = inp_gefistats,
+                    idcol = 'no')
   )
 )
