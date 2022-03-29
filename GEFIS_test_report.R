@@ -1,12 +1,4 @@
----
-title: "GEFIS test: analytical report"
-author: "Mathis L. Messager"
-date: "10/20/2021"
-output: html_document
----
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
 source('R/packages.R')
 source('R/functions.R')
 
@@ -14,10 +6,51 @@ figdir <- file.path(resdir, 'figures')
 if (!dir.exists(figdir)) {
   dir.create(figdir)
 }
-```
 
-## Envhist
-```{r load-data}
+tar_load(eftab)
+qplot(eftab$station_river_distance)
+
+  
+#Number of EF assessments
+eftab[, .N]
+
+#Number of unique sites:
+eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]), .N]
+
+#Number of countries: 
+eftab[, length(unique(Country))]
+  
+#Characteris of unique sites
+eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]), median(UPLAND_SKM)]
+eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]), median(dis_m3_pyr)]
+eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]), mean(ppd_pk_uav)]
+eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]), mean(crp_pc_use)]
+eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]), mean(urb_pc_use)]
+eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]), mean(for_pc_use)]
+eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]), sd(for_pc_use)]
+eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]), sd(for_pc_use)]
+eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]), mean(pac_pc_use)]
+eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]) & pac_pc_use > 50, .N]/eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]),.N]
+eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]) & pac_pc_use < 10, .N]/eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]),.N]
+eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]), mean(dor_pc_pva)]
+eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]), median(dor_pc_pva)]
+eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]) & dor_pc_pva > 10, .N]/eftab[!duplicated(eftab[, .(POINT_X, POINT_Y)]),.N]
+
+#EF type
+eftab[, .N, by=eftype_ref]
+eftab[, length(unique(efname_ref))]
+
+eftab[, length(unique(ecpresent_ref_formatted))]
+
+eftab[, min(dis_m3_pyr)]
+eftab[, min(mar_ref, na.rm=T)/31.56]
+eftab[, max(dis_m3_pyr)]
+eftab[, max(mar_ref, na.rm=T)/31.56]
+
+#
+eftab[ecpresent_ref_formatted == 'A/B', mean(dor_pc_pva)]
+eftab[ecpresent_ref_formatted == 'D', mean(dor_pc_pva)]
+
 tar_load(envhist)
 pdf(file.path(figdir, paste0('envhist', format(Sys.Date(), '%Y%m%d'), '.pdf')),
     width = 10,
@@ -79,19 +112,14 @@ gt(EMC_comparison$confumat_max) %>%
 
 tar_load(EFestimate_comparison)
 pdf(file.path(figdir, paste0('EFcompare_originalc', format(Sys.Date(), '%Y%m%d'), '.pdf')),
-    width = 8,
+    width = 6,
     height = 6)
-grid.draw(EFestimate_comparison$EFcompare_originalec_p)
-dev.off()
-png(file.path(figdir, paste0('EFcompare_originalc', format(Sys.Date(), '%Y%m%d'), '.png')),
-    width = 8,
-    height = 6, unit = 'in', res=600)
 grid.draw(EFestimate_comparison$EFcompare_originalec_p)
 dev.off()
 
 pdf(file.path(figdir, paste0('EFcompare_bestc', format(Sys.Date(), '%Y%m%d'), '.pdf')),
-    width = 6,
-    height = 6)
+    width = 7,
+    height = 7)
 grid.draw(EFestimate_comparison$EFcompare_bestec_p)
 dev.off()
 
@@ -105,23 +133,3 @@ gt(EFestimate_comparison$table_eftype_worst) %>%
 gt(EFestimate_comparison$table_emcref) %>%
   gtsave(file.path(figdir, paste0('EFestimate_comparisontable_emcref',
                                   format(Sys.Date(), '%Y%m%d'), '.html')))
-
-tar_load(mask_analysis)
-png(file.path(figdir, paste0('maskanalysis', format(Sys.Date(), '%Y%m%d'), '.png')),
-    width = 4, height = 6, unit = 'in', res=600)
-grid.draw(mask_analysis)
-dev.off()
-
-```
-
-# Distance between sites after adjustment and nearest river reach in HydroRIVERS:  
-# ```{r plot-dist}
-# qplot(efp$station_river_distance)
-# ```
-
-Sites that are more than 500 m from the nearest river reach in HydroRivers:
-`r flextable(efp[station_river_distance > 500,1:20])`
-
-Number of unique sites: `r efp[!duplicated(efp[, .(POINT_X, POINT_Y)]), .N]`  
-Number of EF assessments: 
-Number of countries: `r efp[, length(unique(Country))]`
