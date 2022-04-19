@@ -1489,27 +1489,36 @@ compare_EFtoGRDC <- function(in_eftab_grdc_join) {
 
 #------ compare_hydrology ------------------------------------------
 compare_hydrology <- function(in_eftab) {
-  in_eftab <- in_eftab[Comment_mathis != 'Not well represented in HydroRIVERS',] %>% #Remove those that cannot be compared
+  in_eftab <- in_eftab[
+    Comment_mathis != 'Not well represented in HydroRIVERS',] %>% #Remove those that cannot be compared
     unique(by=c('POINT_X', 'POINT_Y'))
   
-  #There is no case when different MARs exist for the same sites (despite the different scenarios)
-  duplis <- in_eftab[duplicated(paste0(POINT_X, POINT_Y)) | duplicated(paste0(POINT_X, POINT_Y), fromLast = T),]
+  #There is no case when different MARs exist for the same sites
+  #(despite the different scenarios)
+  duplis <- in_eftab[duplicated(paste0(POINT_X, POINT_Y)) | 
+                       duplicated(paste0(POINT_X, POINT_Y), fromLast = T),]
   
   #--------------------------Compare reference MAR, WaterGAP MAR, and GEFIS MAR-----
-  qstats_clz <- in_eftab[,
-                            getcombistats(in_tab = .SD,
-                                          cols = c('mar_gefis', 'mar_nat_wg22_ls_year', 'mar_ref'),
-                                          log = T
-                            ), by=clz_cl_cmj
+  qstats_clz <- in_eftab[
+    ,
+    getcombistats(
+      in_tab = .SD,
+      cols = c('mar_gefis', 'mar_nat_wg22_ls_year', 'mar_ref'),
+      log = T
+    ), by=clz_cl_cmj
   ]
   
-  qstats <- in_eftab[,
-                        getcombistats(in_tab = .SD,
-                                      cols = c('mar_gefis', 'mar_nat_wg22_ls_year', 'mar_ref'),
-                                      log = T
-                        )
+  qstats <- in_eftab[
+    ,
+    getcombistats(
+      in_tab = .SD,
+      cols = c('mar_gefis', 'mar_nat_wg22_ls_year', 'mar_ref'),
+      log = T
+    )
   ]
-  fwrite(qstats, file.path(resdir, paste0('qstats_all', format(Sys.Date(), '%Y%m%d'), '.csv')))
+  fwrite(qstats, file.path(resdir, 
+                           paste0('qstats_all',
+                                  format(Sys.Date(), '%Y%m%d'), '.csv')))
   
   hydrop_wggefis <- ggplot(in_eftab, aes(x=mar_nat_wg22_ls_year, y=mar_gefis)) +
     geom_point() + 
