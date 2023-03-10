@@ -66,6 +66,11 @@ sdage_masses_url = 'https://www.rhone-mediterranee.eaufrance.fr/sites/sierm/file
 download.file(sdage_masses_url, file.path(outdir, basename(sdage_masses_url)))
 unzip(file.path(outdir, basename(sdage_masses_url)), exdir = outdir)
 
-############### Get coordinates - to be continued ##############################
+############### Download shapefile of Masses d'eau ##############################
+sdage_subbasins_url = 'https://www.rhone-mediterranee.eaufrance.fr/sites/sierm/files/content/2019-07/RefSdage2016_ssbv_FRD.zip'
+download.file(sdage_subbasins_url, file.path(outdir, basename(sdage_subbasins_url)))
+unzip(file.path(outdir, basename(sdage_subbasins_url)), exdir = outdir)
+
+############### Get etat des cours d'eau ##############################
 etat_cours_deau_db <- "https://www.rhone-mediterranee.eaufrance.fr/surveillance-des-eaux/qualite-des-cours-deau/donnees-detat-des-cours-deau-superficiels?search_api_fulltext=&field_sq_region=All&field_sq_departement=All&field_sq_commune=All&field_sq_watershed=All&field_sq_subwatershed=All&field_sq_stream=All&items_per_page=90&view_mode=medium&page=1"
-rvest::read_html(etat_cours_deau_db)
+#Click on "Télécharger le fichier des données 2022/06/07
