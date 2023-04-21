@@ -1029,25 +1029,27 @@ compute_efindices <- function(path, maxgap) {
 #Clean up and format master table
 format_eftab <- function(in_efp) {
   
-  efpcopy <- copy(in_efp)
+  efpcopy <- copy(as.data.table(in_efp))
   
   #Change column names
   namedt <-  rbindlist(
     list(
-      list('E_flow_Method_Model_Type_For_18', 'eftype_ref'), 
-      list('E_flow_Method_Model_Name', 'efname_ref'), 
-      list('System_to_Determine_Ecologic_20', 'ecname_ref'), 
-      list('Ecological_Condition_s__in_P_22', 'ecpresent_ref'),
-      list('Ecological_Condition_s__Set__23', 'ecfuture_ref'),
-      list('Type_of_Hydrological_Regime__26', 'hydrotype_ref'),
-      list('Natural_Naturalised_Mean_Ann_28', 'mar_ref'),
-      list('E_flow_Requirement_as_Volume_29', 'efvol_ref'),
-      list('E_flow_as___of_Natural_Natur_30', 'efper_ref'),
-      list('MAR_Natural_Annual_Runoff_v2_368', 'mar_gefis')
+      list("E-flow Location Name/No.", 'locname'),
+      list("E-flow Method/Model Type", 'eftype_ref'), 
+      list("E-flow Method/Model Name", 'efname_ref'), 
+      list("System to Determine Ecological Condition", 'ecname_ref'), 
+      list("Ecological Condition(s) in Present Day", 'ecpresent_ref'),
+      list("Ecological Condition(s) Set as E-flow Objective for Future Management", 'ecfuture_ref'),
+      list("Type of Hydrological Regime Used to Calculate E-flow", 'hydrotype_ref'),
+      list("Natural/Naturalised Mean Annual Runoff at E-flow Location", 'mar_ref'),
+      list("E-flow Requirement as Volume (106m3 per year)", 'efvol_ref'),
+      list("E-flow as % of Natural/Naturalised Mean Annual Runoff", 'efper_ref')
     )
   ) %>% setnames(c('old', 'new'))
   
   setnames(efpcopy, namedt$old, namedt$new)
+  
+  efcopy <- clean_names(efpcopy) #Clean remaining names
   
   #Format cols
   charcols <- names(efpcopy)[efpcopy[,sapply(.SD, is.character)]]
@@ -1055,20 +1057,25 @@ format_eftab <- function(in_efp) {
   catcolstonormalize <- c('eftype_ref',
                           'hydrotype_ref')
   
-  #unique(in_efp$efvol_ref)
-  
   #Clean it up ---------------------------- do typo corrections directly on the spreadsheet
   efp_format <- efpcopy %>%
     .[, (charcols) := lapply(.SD, function(x) str_trim(x, side = 'both')), 
       .SDcols = charcols] %>%
     .[, (catcolstonormalize) := lapply(.SD, function(x) str_to_sentence(x)), 
       .SDcols = catcolstonormalize] %>%
-    .[eftype_ref == '', eftype_ref := NA] %>%
-    .[hydrotype_ref %in% c('Existing water withdrawal'), hydrotype_ref := 'Existing water withdrawals'] %>%
-    .[hydrotype_ref %in% c('Reduced impact scenario'), hydrotype_ref := 'Reduced impact scenario'] %>%
-    .[Country == 'Brasil', efvol_ref := gsub('[,]', '', efvol_ref)] %>%
-    .[Sub_Basin == 'Upper Ganga', mar_unit := '10^6m3 y-1'] %>%
-    .[EFUID == 33, mar_unit := 'm3 s-1']
+    .[, ecpresent_ref := gsub("\\s*[(]*[nN]ot sure whether present day[)]*", "", 
+                              ecpresent_ref, perl=T)] %>%
+    .[!(EFUID %in% c(41)),]   #Exclude EFA for Senegal river at Manantali. This is the amount only for one flooding event in the year
+
+  
+  
+  efpcopy[, (charcols) := lapply(
+    .SD,function(x){ifelse(x %in% c('', "Na", "NA", "N/A", 'Not specified', 'None'),
+                           NA, x)}), 
+    .SDcols = charcols]
+  
+  #UID_Mathis_Original is not unique as it is associated with each regional dataset
+  #EFUID not unique anymore either because had to duplicate upper Ganga assessment for dorught and normal years
 
   #Convert mar_ref, efvol_ref, and efper_ref to numeric
   numcols <- c('mar_ref', 'efvol_ref', 'efper_ref')
@@ -1079,22 +1086,39 @@ format_eftab <- function(in_efp) {
   #Format efvol_ref
   efp_format[Country == 'Brasil', mar_ref := efvol_ref*2] %>%
     .[mar_unit == "m3 s-1", 
-      mar_ref := mar_ref*31.5576] %>%
-    .[Country == 'Canada' & efper_ref < 2, 
-      efper_ref := min(100, 100*efper_ref), by=EFUID] %>%
+      mar_ref := mar_ref*31.5576] %>% #31.5576 is the number of seconds in a year / 10^6
     .[is.na(efper_ref) & !is.na(efvol_ref) & !is.na(mar_ref), 
       efper_ref := 100*efvol_ref/mar_ref]
-  
-  #Standardize EF type field
-  efp_format[eftype_ref == 'Na', eftype_ref := NA]
 
   #Standardize EMC field
   unique(efp_format$ecpresent_ref)
   efp_format[, ecpresent_ref_formatted := ecpresent_ref]
   efp_format[ecpresent_ref_formatted == 'I and II class', ecpresent_ref_formatted := 'A/B']
-  efp_format[ecpresent_ref_formatted == 'Very good', ecpresent_ref_formatted := 'A']
+  efp_format[ecpresent_ref_formatted %in% c('Very good', 'High'), ecpresent_ref_formatted := 'A']
   efp_format[ecpresent_ref_formatted == 'Good', ecpresent_ref_formatted := 'B']
-  efp_format[ecpresent_ref_formatted %in% c('NA', ''), ecpresent_ref_formatted := NA]
+  efp_format[ecpresent_ref_formatted == 'Moderate', ecpresent_ref_formatted := 'C']
+  efp_format[ecpresent_ref_formatted == 'Poor', ecpresent_ref_formatted := 'D']
+  efp_format[ecpresent_ref_formatted == 'Bad', ecpresent_ref_formatted := 'E']
+  
+  #Format Australian system
+  aus_scale_dt = data.table(
+    aus_cat = c('excellent', 'good', 'moderate', 'poor', 'very poor', 'insufficient data'),
+    cat_min = c(71, 51, 31, 11, 0, -99),
+    cat_max = c(100, 70, 50, 30, 10, -99),
+    equivalent_cat = c('A', 'B', 'C', 'D', 'E', NA)
+  )
+  
+  efp_format[, 
+             ecpresent_ref_formatted :=  fcase(
+               as.numeric(ecpresent_ref_formatted) > 70, 'A',
+               as.numeric(ecpresent_ref_formatted) > 50, 'B',
+               as.numeric(ecpresent_ref_formatted) > 30, 'C',
+               as.numeric(ecpresent_ref_formatted) > 10, 'D',
+               as.numeric(ecpresent_ref_formatted) > 0, 'E',
+               is.na(as.numeric(ecpresent_ref_formatted)), ecpresent_ref_formatted
+             )
+  ]
+  
   #efp_format[grepl('Â', ecpresent_ref_formatted), ecpresent_ref_formatted := NA] #str_trim(gsub('Â', '', ecpresent_ref_formatted), side = 'both')
   efp_format[ecpresent_ref_formatted %in% c('A', 'A/B', 'B', 'B/C', 'C', 'C/D', 
                                             'D', 'D/E', 'E'),
@@ -1111,31 +1135,6 @@ format_eftab <- function(in_efp) {
     ymax = c(0.25, 0.35, 0.5, 0.75, 1),
     label = c('E', 'D', 'C', 'B', 'A')
   )
-  
-  #Create unique ID for each study and site
-  efp_format[, SiteUID := as.numeric(factor(do.call(paste0,.SD))), .SDcols=c('POINT_X', 'POINT_Y')] #Update with POINT_X and POINT_Y
-  
-  #Format GEFIS fields
-  efp_format[, `:=`(
-    MAR_EF_Probable_perc =  100*MAR_EF_Probable_mcm_acc/mar_gefis,
-    mar_nat_wg22_ls_year = dis_nat_wg22_ls_year*31.5576/1000,
-    mar_ant_wg22_ls_year = dis_ant_wg22_ls_year*31.5576/1000,
-    MAR_EF_A_perc = 100*MAR_A_v2_acc/mar_gefis,
-    MAR_EF_B_perc = 100*MAR_B_v2_acc/mar_gefis,
-    MAR_EF_C_perc = 100*MAR_C_v2_acc/mar_gefis,
-    MAR_EF_D_perc = 100*MAR_D_v2_acc/mar_gefis
-  )] %>%
-    .[,
-      MAR_EF_ecpresentref_perc := fcase( #Compute the GEFIS EF perc based on the EMC of the country estimate
-        ecpresent_ref_formatted == 'A', MAR_EF_A_perc,
-        ecpresent_ref_formatted == 'A/b', (MAR_EF_A_perc + MAR_EF_B_perc)/2,
-        ecpresent_ref_formatted == 'B', MAR_EF_B_perc,
-        ecpresent_ref_formatted == 'B/C', (MAR_EF_B_perc + MAR_EF_C_perc)/2,
-        ecpresent_ref_formatted == 'C', MAR_EF_C_perc,
-        ecpresent_ref_formatted == 'C/D', (MAR_EF_C_perc + MAR_EF_D_perc)/2,
-        ecpresent_ref_formatted == 'D', MAR_EF_D_perc
-      )
-    ]
   
   #Compute numeric value for ordinal class
   efp_format[ecpresent_reftype == 'Standard', `:=`(
@@ -1164,43 +1163,66 @@ format_eftab <- function(in_efp) {
       ecpresent_ref_formatted == 'D/E', 0.75,
       ecpresent_ref_formatted == 'E', 0.80
     )
-  )] %>%
-    .[, ecpresent_refgefisdiff := EMC_10Variable_2_mean - ecpresent_ref_num] #Compute diff.
-  
-  #Create new fields for comparison
-  efp_format[, `:=`(
-    mar_spe_gefiswg = 200*(mar_gefis - mar_nat_wg22_ls_year)/(
-      mar_gefis + mar_nat_wg22_ls_year),
-    mar_spe_gefisref = 200*(mar_gefis - mar_ref)/(
-      mar_gefis + mar_ref),
-    ef_spe_gefisref_probable = 200*(MAR_EF_Probable_perc - efper_ref)/(
-      MAR_EF_Probable_perc + efper_ref),
-    ef_spe_gefisref_emcref = 200*(MAR_EF_ecpresentref_perc - efper_ref)/(
-      MAR_EF_ecpresentref_perc + efper_ref)
   )]
-  
-  
-  #Categorize GEFIS average EMC score
-  efp_format[,
-             ecpresent_gefisws := fcase(
-               EMC_10Variable_2_mean < 0.25, 'A',
-               0.25 < EMC_10Variable_2_mean & EMC_10Variable_2_mean <= 0.5, 'B',
-               0.5 < EMC_10Variable_2_mean & EMC_10Variable_2_mean <= 0.65, 'C',
-               0.65 < EMC_10Variable_2_mean & EMC_10Variable_2_mean <= 0.75, 'D',
-               0.75 < EMC_10Variable_2_mean, 'E'
-             )]
-  
-  efp_format[,
-             ecpresent_gefisp := fcase(
-               EMC_10Variable_2 < 0.25, 'A',
-               0.25 < EMC_10Variable_2 & EMC_10Variable_2 <= 0.5, 'B',
-               0.5 < EMC_10Variable_2 & EMC_10Variable_2 <= 0.65, 'C',
-               0.65 < EMC_10Variable_2 & EMC_10Variable_2 <= 0.75, 'D',
-               0.75 < EMC_10Variable_2, 'E'
-             )]
-  
   return(efp_format)
 }
+
+join_eftab_globalef <- function(in_eftab, in_globalef_path) {
+  
+  efpriverjoin_nodupli <- in_efpriverjoin[!duplicated(
+    in_efpriverjoin[, c('POINT_X', 'POINT_Y'), with=F]),] 
+  
+  #Merge in_eftab to efpriverjoin_nodupli by the following columns for first EFUID 1:653
+  c("Country", "Basin", "Sub-Basin", "River", "locname")
+  
+  #Rename to locname
+  
+  #Merge in_eftab to in_efpriverjoin
+  names(in_eftab)
+  names(efpriverjoin_nodupli)
+  
+  names(efmod)
+
+  
+  
+  efmod <- fread(in_globalef_path)
+
+  
+
+  names(efmod)
+  names(in_efpriverjoin)
+  
+  #EFpoints1_joinedit: no
+  #EFpoints2_joinedit: OBJECTID
+  #Master_20211104_parzered_notIWMI_joinedit: EFUID
+  #EFpoints_Mexico_clean: id_cuenca
+  #Rhone_EFpoints_clean: UID_Mathis
+  #EFpoints_Victoria_emcedit_attri: UID_Mathis
+  #brazil_basins_pourpoints: grid_code, basin_name
+  
+  # #Create new fields for comparison
+  # efp_format[, `:=`(
+  #   mar_spe_gefiswg = 200*(mar_gefis - mar_nat_wg22_ls_year)/(
+  #     mar_gefis + mar_nat_wg22_ls_year),
+  #   mar_spe_gefisref = 200*(mar_gefis - mar_ref)/(
+  #     mar_gefis + mar_ref),
+  #   ef_spe_gefisref_probable = 200*(MAR_EF_Probable_perc - efper_ref)/(
+  #     MAR_EF_Probable_perc + efper_ref),
+  #   ef_spe_gefisref_emcref = 200*(MAR_EF_ecpresentref_perc - efper_ref)/(
+  #     MAR_EF_ecpresentref_perc + efper_ref)
+  # )]
+  # 
+  # #Create unique ID for each study and site
+  # efp_format[, SiteUID := as.numeric(factor(do.call(paste0,.SD))), 
+  #            .SDcols=c('POINT_X', 'POINT_Y')] #Update with POINT_X and POINT_Y
+  
+
+  
+  }
+
+
+
+
 
 #------ rformat_network ------------------
 #' Format river network
