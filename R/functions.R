@@ -866,6 +866,167 @@ getqstats <- function(dt, x, y, rstudthresh= 3, log=FALSE) {
   return(outstats)
 }
 
+#------ bin_dt -----------------
+#' Bin data.table
+#'
+#' Bins a data.table over a numeric column.
+#'
+#' @param in_dt \link[data.table]{data.table} to bin.
+#' @param binvar (character) column that will be used to define bins.
+#' @param binfunc (character) binning approach. One of 'manual', 'equal_length', 'equal_freq'.
+#' @param binarg (numeric) binning argument, depends on binning approach (\code{binfunc}).
+#' @param bintrans (character or numeric) transformation of \code{binvar}, default is NULL.
+#' @param ndigits (integer) number of decimals to keep for displaying formatted bin limits
+#' @param na.rm (logical) whether to include NAs.
+#' @param valuevar (character) if na.rm = FALSE, column to use to detect NAs and remove records.
+#'
+#' @return input \link[data.table]{data.table} with four new columns:
+#' \itemize{
+#'   \item bin - bin number (1 being the lowest value bin)
+#'   \item bin_lmin - bin lower limit
+#'   \item bin_lmax - bin higher limit
+#'   \item bin_lformat - formatted character of bin limits
+#'   (format: \code{round(bin_lmin, ndigits) - round(bin_lmax, ndigits))
+#' }
+#'
+#' @details inspired from [rbin package](https://github.com/rsquaredacademy/rbin).
+#' Differences include that it concentrates all binning approaches within a single
+#' function and works on a data.table.
+#'
+#' binfunc: \cr
+#' \itemize{
+#'   \item 'manual' - bin continuous data manually. \code{binarg} sets the inner bin limits,
+#'  such that the final table will have \code{length(binarg) + 1} bins. The lower end of the
+#'  first bin is automatically set to be the minimum value in \code{binvar} and the upper end of
+#'  the last bin is set to be the maximum value in \code{binvar}
+#'
+#'   \item 'equal_length' - Bin continuous data such that each bin has the same \code{binvar} interval length.
+#'   If \code{bintrans} is not \code{NULL}, then interval length is computed on transformed scale.
+#'   \code{binarg} (automatically rounded to the nearest integer) sets the number of bins.
+#'
+#'   \item 'equal_freq' - Bin continuous data such that each bin has the same number of records.
+#'   \code{binarg} (automatically rounded to the nearest integer) sets the number of bins.
+#' }
+#'
+#' bintrans: can either be 'log' (for natural log) or a numeric exponent to transform
+#' according to x^bintrans.
+#'
+#' @seealso for examples, see applications in \code{\link{bin_misclass}},
+#' \code{\link{eval_watergap}}, \code{\link{tabulate_globalsummary}},
+#' \code{\link{formathistab}}, \code{\link{compare_us}}
+#'
+#' @export
+bin_dt <- function(in_dt, binvar, binfunc, binarg,
+                   bintrans=NULL, ndigits=2,
+                   na.rm=FALSE, valuevar=NULL) {
+  #Inspired from rbin, adapted to dt and simplified
+  in_dt <- copy(in_dt)
+  
+  el_freq <- function(byd, bins) {
+    bin_length <- (max(byd, na.rm = TRUE) - min(byd, na.rm = TRUE)) / bins
+    append(min(byd, na.rm = TRUE), min(byd, na.rm = TRUE) + (bin_length * seq_len(bins)))[1:bins]
+    
+  }
+  
+  eu_freq <- function(byd, bins) {
+    bin_length <- (max(byd, na.rm = TRUE) - min(byd, na.rm = TRUE)) / bins
+    ufreq      <- min(byd, na.rm = TRUE) + (bin_length * seq_len(bins))
+    n          <- length(ufreq)
+    ufreq[n]   <- max(byd, na.rm = TRUE) + 1
+    return(ufreq)
+    
+  }
+  
+  binvar_orig <- copy(binvar)
+  
+  #Remove NAs
+  if (na.rm) {
+    in_dt <- in_dt[!is.na(get(eval(valuevar))),]
+  }
+  
+  #Transform data if trans
+  if (!is.null(bintrans)) {
+    transvar <- paste0(binvar, '_bintrans')
+    if (bintrans == 'log') {
+      nneg <- in_dt[get(eval(binvar)) <= 0, .N]
+      warning(paste0('There are ', nneg, ' records with', binvar, ' <= 0...',
+                     'removing them for log transformation'))
+      in_dt[, eval(transvar) :=
+              log(get(eval(binvar)))]
+      
+    } else if (is.numeric(bintrans)) {
+      in_dt[, eval(transvar) :=
+              get(eval(binvar))^eval(bintrans)]
+      
+    }
+    binvar = transvar
+  }
+  
+  byd <- in_dt[, get(eval(binvar))]
+  
+  if (binfunc == 'manual') {
+    l_freq    <- append(min(byd), binarg)
+    u_freq    <- c(binarg, (max(byd, na.rm = TRUE) + 1))
+    bins      <- length(binarg) + 1
+  }
+  
+  if (binfunc == 'equal_length') {
+    bins = round(binarg)
+    l_freq    <- el_freq(byd, bins)
+    u_freq    <- eu_freq(byd, bins)
+  }
+  
+  if (binfunc == 'equal_freq') {
+    bins = round(binarg)
+    bin_prop     <- 1 / bins
+    bin_length   <- in_dt[, round(.N/bins)]
+    first_bins   <- (bins - 1) * bin_length
+    residual     <- in_dt[, .N - first_bins]
+    bin_rep      <- c(rep(seq_len((bins - 1)), each = bin_length),
+                      rep(residual, residual))
+    l_freq        <- c(1, (bin_length * seq_len((bins - 1)) + 1))
+    u_freq       <- c(bin_length * seq_len((bins - 1)), in_dt[,.N])
+    setorderv(in_dt, cols= eval(binvar))
+    in_dt[, binid := .I]
+    binvar = 'binid'
+  }
+  
+  for (i in seq_len(bins)) {
+    in_dt[get(eval(binvar)) >= l_freq[i] & get(eval(binvar)) < u_freq[i],
+          bin := i]
+    in_dt[bin == i, `:=`(bin_lmin = min(get(eval(binvar_orig)), na.rm=T),
+                         bin_lmax = max(get(eval(binvar_orig)), na.rm=T))] %>%
+      .[bin == i, bin_lformat := paste(round(bin_lmin, ndigits),
+                                       round(bin_lmax, ndigits),
+                                       sep='-')]
+    
+    if (i == bins) {
+      in_dt[get(eval(binvar)) == u_freq[i],  bin := i]
+    }
+  }
+  
+  if (binfunc == 'equal_freq') {in_dt[, binid := NULL]}
+  
+  return(in_dt)
+}
+#------ label_manualbins ------------
+#' Label manual bins
+#'
+#' Utility function: label bin limits for \code{\link{formathistab}}.
+#'
+#' @param binarg (character vector) Arguments for bin_dt manual
+#' @param minval (numeric) value to set for lower limit of first bin.
+#'
+#' @return vector of labels
+#'
+#' @export
+label_manualbins <- function(binarg, minval, digits=1) {
+  minlabel <- paste(round(minval, digits),
+                    binarg[1], sep=" - ")
+  otherlabels <- mapply(function(x, y) {paste(x, y-1, sep=" - ")},
+                        binarg[1:(length(binarg)-1)], binarg[2:length(binarg)])
+  return(c(minlabel, otherlabels))
+}
 #------ getcombistats -------------------------------------
 #Run getqstats function on all combination of pairs in cols
 getcombistats <- function(in_tab, cols, log) {
@@ -1042,7 +1203,7 @@ format_eftab <- function(in_efp) {
       list("Ecological Condition(s) Set as E-flow Objective for Future Management", 'ecfuture_ref'),
       list("Type of Hydrological Regime Used to Calculate E-flow", 'hydrotype_ref'),
       list("Natural/Naturalised Mean Annual Runoff at E-flow Location", 'mar_ref'),
-      list("E-flow Requirement as Volume (106m3 per year)", 'efvol_ref'),
+      list("E-flow Requirement as Volume", 'efvol_ref'),
       list("E-flow as % of Natural/Naturalised Mean Annual Runoff", 'efper_ref')
     )
   ) %>% setnames(c('old', 'new'))
@@ -1057,7 +1218,7 @@ format_eftab <- function(in_efp) {
   catcolstonormalize <- c('eftype_ref',
                           'hydrotype_ref')
   
-  #Clean it up ---------------------------- do typo corrections directly on the spreadsheet
+  #Clean it up 
   efp_format <- efpcopy %>%
     .[, (charcols) := lapply(.SD, function(x) str_trim(x, side = 'both')), 
       .SDcols = charcols] %>%
@@ -1065,11 +1226,11 @@ format_eftab <- function(in_efp) {
       .SDcols = catcolstonormalize] %>%
     .[, ecpresent_ref := gsub("\\s*[(]*[nN]ot sure whether present day[)]*", "", 
                               ecpresent_ref, perl=T)] %>%
-    .[!(EFUID %in% c(41)),]   #Exclude EFA for Senegal river at Manantali. This is the amount only for one flooding event in the year
-
+    .[!(EFUID %in% c(41)),] %>%  #Exclude EFA for Senegal river at Manantali. This is the amount only for one flooding event in the year
+    .[!((Point_db == 'IWMI_3' & UID_Mathis %in% seq(603, 651)))] #Remove studies from Poland and Greece that for now cannot be used in analysis
   
   
-  efpcopy[, (charcols) := lapply(
+  efp_format[, (charcols) := lapply(
     .SD,function(x){ifelse(x %in% c('', "Na", "NA", "N/A", 'Not specified', 'None'),
                            NA, x)}), 
     .SDcols = charcols]
@@ -1084,11 +1245,38 @@ format_eftab <- function(in_efp) {
   #For Brazil (double check that all records are in this case):
   #Convert Mean long term flow (m3/s) to Natural/Naturalised Mean Annual Runoff at E-flow Location (106m3)
   #Format efvol_ref
-  efp_format[Country == 'Brasil', mar_ref := efvol_ref*2] %>%
-    .[mar_unit == "m3 s-1", 
-      mar_ref := mar_ref*31.5576] %>% #31.5576 is the number of seconds in a year / 10^6
-    .[is.na(efper_ref) & !is.na(efvol_ref) & !is.na(mar_ref), 
-      efper_ref := 100*efvol_ref/mar_ref]
+  efp_format[Country == 'Brasil', mar_ref := efvol_ref*2]
+
+    
+  unique(efp_format$ef_unit)
+  #Make sure that all MAR values are in the same unit
+  #31.5576 is the number of seconds in a year / 10^6
+  efp_format[mar_unit == "m3 s-1", 
+      `:=` (mar_ref = mar_ref*31.5576,
+          mar_unit = "10^6m3 y-1")]
+  efp_format[ef_unit == "m3 s-1", 
+             `:=` (efvol_ref = efvol_ref*31.5576,
+                   ef_unit = "10^6m3 y-1")]
+  efp_format[mar_unit == "ML/day", 
+             `:=` (mar_ref = mar_ref*365.25/1000,
+                   mar_unit = "10^6m3 y-1")]
+  efp_format[ef_unit == "ML/y", 
+             `:=` (efvol_ref = efvol_ref/1000,
+                   ef_unit = "10^6m3 y-1")]
+  
+  
+  #There is no case when different MARs exist for the same sites
+  #(despite the different scenarios)
+  duplis <- efp_format[duplicated(paste0(Point_db, UID_Mathis)) | 
+                         duplicated(paste0(Point_db, UID_Mathis), fromLast = T)
+                         ,]
+
+  ##############################################################################################Double-check why so many NAs in Victoria 
+
+  efp_format[is.na(efper_ref) & !is.na(efvol_ref) & !is.na(mar_ref), 
+             efper_ref := 100*efvol_ref/mar_ref]
+  efp_format[is.na(efvol_ref) & !is.na(efper_ref) & !is.na(mar_ref), 
+             efvol_ref := efvol_ref*mar_ref/100]
 
   #Standardize EMC field
   unique(efp_format$ecpresent_ref)
@@ -1166,62 +1354,6 @@ format_eftab <- function(in_efp) {
   )]
   return(efp_format)
 }
-
-join_eftab_globalef <- function(in_eftab, in_globalef_path) {
-  
-  efpriverjoin_nodupli <- in_efpriverjoin[!duplicated(
-    in_efpriverjoin[, c('POINT_X', 'POINT_Y'), with=F]),] 
-  
-  #Merge in_eftab to efpriverjoin_nodupli by the following columns for first EFUID 1:653
-  c("Country", "Basin", "Sub-Basin", "River", "locname")
-  
-  #Rename to locname
-  
-  #Merge in_eftab to in_efpriverjoin
-  names(in_eftab)
-  names(efpriverjoin_nodupli)
-  
-  names(efmod)
-
-  
-  
-  efmod <- fread(in_globalef_path)
-
-  
-
-  names(efmod)
-  names(in_efpriverjoin)
-  
-  #EFpoints1_joinedit: no
-  #EFpoints2_joinedit: OBJECTID
-  #Master_20211104_parzered_notIWMI_joinedit: EFUID
-  #EFpoints_Mexico_clean: id_cuenca
-  #Rhone_EFpoints_clean: UID_Mathis
-  #EFpoints_Victoria_emcedit_attri: UID_Mathis
-  #brazil_basins_pourpoints: grid_code, basin_name
-  
-  # #Create new fields for comparison
-  # efp_format[, `:=`(
-  #   mar_spe_gefiswg = 200*(mar_gefis - mar_nat_wg22_ls_year)/(
-  #     mar_gefis + mar_nat_wg22_ls_year),
-  #   mar_spe_gefisref = 200*(mar_gefis - mar_ref)/(
-  #     mar_gefis + mar_ref),
-  #   ef_spe_gefisref_probable = 200*(MAR_EF_Probable_perc - efper_ref)/(
-  #     MAR_EF_Probable_perc + efper_ref),
-  #   ef_spe_gefisref_emcref = 200*(MAR_EF_ecpresentref_perc - efper_ref)/(
-  #     MAR_EF_ecpresentref_perc + efper_ref)
-  # )]
-  # 
-  # #Create unique ID for each study and site
-  # efp_format[, SiteUID := as.numeric(factor(do.call(paste0,.SD))), 
-  #            .SDcols=c('POINT_X', 'POINT_Y')] #Update with POINT_X and POINT_Y
-  
-
-  
-  }
-
-
-
 
 
 #------ rformat_network ------------------
@@ -1509,82 +1641,148 @@ compare_EFtoGRDC <- function(in_eftab_grdc_join) {
 }
 
 
+#------ join_efp_to_efmod ------------------------------------------------------
+join_efp_to_efmod <- function(in_eftab, in_path_efp_mod) {
+  efp_mod <- fread(in_path_efp_mod)
+  
+  #Format NAs
+  efp_mod[, (names(efp_mod)) := lapply(
+    .SD,function(x){ifelse(x %in% c(-9999, '-9999', ''),
+                           NA, x)}), 
+    .SDcols = names(efp_mod)]
+  
+  #Remove extraneous columns
+  colstoremove <- c("V1", "OBJECTID", "merge_efextract_df", "eftype_2_x",
+                    "Point_shift_mathis", "Comment_mathis", "POINT_X", "POINT_Y",
+                    "path", "climate_scenario", "human_scenario", 'variable',
+                    'eftype_2')
+  efp_mod[, (colstoremove):=NULL]
+
+  #Average monthly values
+  efp_mod_format <- efp_mod[, list(value = mean(value)), 
+                            by=c("UID_Mathis", "Point_db","ghm", "gcm", "var", "res",
+                                 "run", "eftype", "eftype_format", "emc")]
+  
+  binlabels <- label_manualbins(binarg=c(10, 100, 1000, 10000, 10000000),
+                                minval=min(in_eftab$up_area_skm_15s)) %>%
+    data.table(bin_label = .,
+               bin=seq(1,6))
+  
+  eftab_modjoin <- merge(in_eftab,
+                         efp_mod_format,
+                         by=c("UID_Mathis", "Point_db"),
+                         allow.cartesian=TRUE) %>%  #Only keep maf estimates
+    bin_dt(binvar = "up_area_skm_15s",
+           binfunc='manual',
+           binarg = c(10, 100, 1000, 10000, 10000000)) %>%
+    merge(binlabels, by='bin') %>%
+    .[eftype_format != 'mmf',] 
+  
+  #Correctly scale values for isimp2b
+  eftab_modjoin[res=="0.5 arc-deg" & var=='qtot', value := value/1000]
+  
+  ##################################################################################Problem with Smahktin computations for isimp2b discharge
+  
+  return(eftab_modjoin)
+}
+
 #------ compare_hydrology ------------------------------------------
-compare_hydrology <- function(in_eftab) {
-  in_eftab <- in_eftab[
-    Comment_mathis != 'Not well represented in HydroRIVERS',] %>% #Remove those that cannot be compared
-    unique(by=c('POINT_X', 'POINT_Y'))
+compare_hydrology <- function(in_efp_efmod_join) {
+  eftab_maf <- in_efp_efmod_join[
+    (Comment_mathis != 'Not well represented in HydroRIVERS') | 
+      (is.na(Comment_mathis)),]  %>% #Remove those that cannot be compared
+    .[!is.na(mar_ref),] %>% #remove sites without MAR value
+    unique(by=c('POINT_X', 'POINT_Y', 'run', 'var', 'emc', 'eftype_format')) %>% #Keep unique sites
+    .[eftype_format == 'maf']  %>%
+    .[,`:=`(mar_ref = mar_ref/31.5576, 
+            mar_unit = "m3 s-1")] 
+  #--------------------------Compare reference and model MAR for discharge -----
+  ggplot(eftab_maf[var=='dis',], aes(x=mar_ref, y=value)) +
+    geom_point() +
+    scale_x_log10(name= expression('Observed mean annual discharge'~(m^3~y^-1))) +
+    scale_y_log10(name= expression('Predicted mean annual discharge'~(m^3~y^-1))) +
+    geom_abline () +
+    facet_grid(c("gcm", "ghm"), 
+               labeller = "label_both") + 
+    theme_classic()
+    
+  ggplot(eftab_maf[var=='qtot',], aes(x=mar_ref, y=value)) +
+    geom_point() +
+    scale_x_log10(name= expression('Observed mean annual discharge'~(m^3~y^-1))) +
+    scale_y_log10(name= expression('Predicted mean annual discharge'~(m^3~y^-1))) +
+    geom_abline () +
+    geom_smooth() +
+    facet_grid(c("gcm", "ghm"), 
+               labeller = "label_both") + 
+    theme_classic()
   
-  #There is no case when different MARs exist for the same sites
-  #(despite the different scenarios)
-  duplis <- in_eftab[duplicated(paste0(POINT_X, POINT_Y)) | 
-                       duplicated(paste0(POINT_X, POINT_Y), fromLast = T),]
   
-  #--------------------------Compare reference MAR, WaterGAP MAR, and GEFIS MAR-----
-  qstats_clz <- in_eftab[
+  qstats_all <- eftab_maf[
     ,
-    getcombistats(
-      in_tab = .SD,
-      cols = c('mar_gefis', 'mar_nat_wg22_ls_year', 'mar_ref'),
+    getqstats(
+      dt = .SD,
+      x = 'mar_ref',
+      y = 'value',
+      rstudthresh= 3,
       log = T
-    ), by=clz_cl_cmj
+    ), 
+    by=c('var', 'gcm', 'ghm')
   ]
   
-  qstats <- in_eftab[
+  qstats_da <- eftab_maf[
     ,
-    getcombistats(
-      in_tab = .SD,
-      cols = c('mar_gefis', 'mar_nat_wg22_ls_year', 'mar_ref'),
+    getqstats(
+      dt = .SD,
+      x = 'mar_ref',
+      y = 'value',
+      rstudthresh= 3,
       log = T
-    )
-  ]
-  fwrite(qstats, file.path(resdir, 
-                           paste0('qstats_all',
+    ), 
+    by=c('var', 'gcm', 'ghm', 'bin_label')
+  ] %>%
+    setnames('bin_label', "Drainage area")
+  
+  qstats_clz <- eftab_maf[
+    ,
+    getqstats(
+      dt = .SD,
+      x = 'mar_ref',
+      y = 'value',
+      rstudthresh= 3,
+      log = T
+    ), 
+    by=c('var', 'gcm', 'ghm', 'clz_cl_cmj')
+  ] 
+  
+  qstats_country <- eftab_maf[
+    ,
+    getqstats(
+      dt = .SD,
+      x = 'mar_ref',
+      y = 'value',
+      rstudthresh= 3,
+      log = T
+    ), 
+    by=c('var', 'gcm', 'ghm', 'Country')
+  ] 
+
+  
+  fwrite(qstats_all, file.path(resdir, 
+                               paste0('qstats_all',
+                                      format(Sys.Date(), '%Y%m%d'), '.csv')))
+  
+  fwrite(qstats_da, file.path(resdir, 
+                           paste0('qstats_da',
                                   format(Sys.Date(), '%Y%m%d'), '.csv')))
   
-  hydrop_wggefis <- ggplot(in_eftab, aes(x=mar_nat_wg22_ls_year, y=mar_gefis)) +
-    geom_point() + 
-    geom_abline() +
-    scale_x_log10(name = expression('HydroRIVERS MAR'~(10^6~m^3~y^-1))) + 
-    scale_y_log10(name = expression('GEFIS MAR'~(10^6~m^3~y^-1))) +
-    theme_bw() +
-    theme(plot.background = element_blank())
+  fwrite(qstats_clz, file.path(resdir, 
+                              paste0('qstats_clz',
+                                     format(Sys.Date(), '%Y%m%d'), '.csv')))
   
-  hydrop_wgref <- ggplot(in_eftab, 
-                         aes(x=mar_nat_wg22_ls_year, y=as.numeric(mar_ref))) +
-    geom_point() +
-    #geom_text(aes(label=EFUID)) +
-    geom_abline() +
-    scale_x_log10(name = expression('HydroRIVERS MAR'~(10^6~m^3~y^-1))) + 
-    scale_y_log10(name = expression('Local EFA MAR'~(10^6~m^3~y^-1)))+
-    theme_bw()+
-    theme(plot.background = element_blank())
+  fwrite(qstats_country, file.path(resdir, 
+                               paste0('qstats_country',
+                                      format(Sys.Date(), '%Y%m%d'), '.csv')))
   
-  hydrop_gefisref <- ggplot(in_eftab, 
-                            aes(x=mar_gefis, y=as.numeric(mar_ref))) +
-    geom_point() + 
-    geom_abline() +
-    scale_x_log10(name = expression('GEFIS MAR'~(10^6~m^3~y^-1))) + 
-    scale_y_log10(name = expression('Local EFA MAR'~(10^6~m^3~y^-1))) +
-    theme_bw()+
-    theme(plot.background = element_blank())
-  
-  
-  spemissing_gefisref <- ggplot(in_eftab, aes(x=100*(1-MAR_boolean_ratio), 
-                                              y=mar_spe_gefisref)) +
-    geom_point() +
-    #geom_smooth(method='lm') +
-    scale_x_continuous(name='% masked watershed area',
-                       expand=c(0,0), limits=c(0,100), 
-                       breaks=c(0, 25, 50, 75, 100)) +
-    scale_y_continuous(name=str_wrap('MAR error - GEFIS vs. local EFA (%)', 25)) +
-    coord_cartesian(clip='off') +
-    theme_bw()+
-    theme(plot.background = element_blank())
-  
-  composite_plot <- ((hydrop_wggefis + hydrop_gefisref)/
-                       (hydrop_wgref | spemissing_gefisref)) +
-    plot_annotation(tag_levels = 'A')
   
   return(list(plot = composite_plot, 
               table_all = qstats,
@@ -1770,34 +1968,144 @@ compare_EMC <- function(in_eftab, in_riveratlas_varsdt) {
 }
 
 #------ compare_EFestimate ------------------------------------------
-compare_EFestimate <- function(in_eftab) {
-  in_eftab[is.na(eftype_ref), eftype_ref := 'None specified']
-  in_eftab[, Country := factor(Country)]
+compare_EFestimate <- function(in_efp_efmod_join) {
+  eftab <- in_efp_efmod_join[
+    (Comment_mathis != 'Not well represented in HydroRIVERS') | 
+      (is.na(Comment_mathis)),]  %>% #Remove those that cannot be compared
+    merge(dcast(.[eftype_format == 'maf',],  #Create new column for MAF rather than as a record
+                EFUID+gcm+ghm+var~eftype_format, 
+                value.var = 'value'),
+          by=c('EFUID', 'gcm', 'ghm', 'var')
+    )%>%
+    .[!(eftype_format %in% c("maf", "mmf")),] %>% #Remove maf records
+    .[, efper_mod := fifelse(maf >0, 100*value/maf, 0)] %>% #COmpute percentage EF
+    .[value>0, ef_refmod_diff := (value-efper_mod)/value] %>%
+    .[ef_unit == "10^6m3 y-1", `:=`(
+      ef_unit = "m3 s-1",
+      efvol_ref = efvol_ref/31.5576
+    )] %>%
+    .[efper_mod > 100, efper_mod := 100] %>% #7 cases 
+    .[efper_ref <= 100,] %>%
+    merge(.[, unique(.SD),  .SDcols=c('Point_db', 'UID_Mathis', 'Country')][
+      , list(Ncountry=.N), by='Country'],
+      by='Country')
   
-  #Whe multiple scenarios and one is clearly present-day, only keep that one 
-  in_eftabsub_pre <- in_eftab[!(EFUID %in% c(2, 3, 4, 10, 35, 36, 37)),]
-  
-  in_eftabsub_worst <- in_eftabsub_pre[order(ecpresent_refgefisdiff),][
+  #Analysis by volume
+  #########Modify by volume
+  eftab_worst <- eftab[order(ef_refmod_diff),][
     !(duplicated( #Remove duplicate sites (multiple scenarions, keeping the one with least EC difference when standard system)
-      in_eftabsub_pre[order(ecpresent_refgefisdiff),], by=c('POINT_X', 'POINT_Y'))),
-  ] %>%
-    .[Country != 'Poland',] %>% #Can't use Poland in the comparison
-    .[EMC_boolean_ratio > 0.3,]  #Remove those without enough EF information
+      eftab[order(ef_refmod_diff),], 
+      by=c('POINT_X', 'POINT_Y', 'gcm', 'ghm', 'var', 'eftype_format'))),
+  ] 
   
-  in_eftabsub_best <- in_eftabsub_pre[order(-ecpresent_refgefisdiff),][
+  eftab_best <- eftab[order(-ef_refmod_diff),][
     !(duplicated( #Remove duplicate sites (multiple scenarions, keeping the one with least EC difference when standard system)
-      in_eftabsub_pre[order(-ecpresent_refgefisdiff),], by=c('POINT_X', 'POINT_Y'))),
-  ] %>%
-    .[Country != 'Poland',] %>% #Can't use Poland in the comparison
-    .[EMC_boolean_ratio > 0.3,]  #Remove those without enough EF information
+      eftab[order(-ef_refmod_diff),], 
+      by=c('POINT_X', 'POINT_Y', 'gcm', 'ghm', 'var', 'eftype_format'))),
+  ] 
+  
+  
+  efvol_stats_country <- eftab_best[!is.na(efvol_ref) & 
+                                      var=='qtot'& 
+                                      Ncountry > 10
+                                    ,
+                                    getqstats(
+                                      dt = .SD,
+                                      x = 'efvol_ref',
+                                      y = 'value',
+                                      rstudthresh= 3,
+                                      log = T
+                                    ), 
+                                    by=c('var', 'gcm', 'ghm', 
+                                         'Country', 'eftype_format')
+  ] 
+  
+  
+  EFcompare_best_vol_France_p <- ggplot(eftab_best[var=='qtot' &
+                                                     Country == 'France',], 
+                                        aes(x=(efvol_ref), y=value)) +
+    geom_abline(alpha=1/2) +
+    geom_point() + #aes(group=Country,color=Country, shape=Country)
+    scale_x_log10() + 
+    scale_y_log10() +
+    geom_smooth() +
+    facet_grid(c("run", "eftype_format"), 
+               labeller = "label_both",
+               scales='free')
+  plot(EFcompare_best_vol_France_p)  
+  
+  
+  #Analysis by percentage
+  
+
+  
+  
+  ####################################################################################Investigate
+  check <- unique(eftab[efper_ref > 100,], by="EFUID")[,
+  c("EFUID", "UID_Mathis", "Point_db", "Country", "Basin", "River",
+  "locname", "mar_unit", "mar_ref", "ef_unit", "efvol_ref", "efper_ref"),
+  with=F]
+  
+  eftab[is.na(eftype_ref), eftype_ref := 'None specified']
+  eftab[, Country := factor(Country)]
+  
+    # unique(by=c('POINT_X', 'POINT_Y', 'run', 'var', 'emc', 'eftype_format')) %>% #Keep unique sites
+    # .[eftype_format == 'maf'] %>%  #Only keep maf estimates
+    # .[,`:=`(mar_ref = mar_ref/31.5576, #convert mar ref to m3 s-1
+    #         mar_unit = "m3 s-1")] %>%
+    # bin_dt(binvar = "up_area_skm_15s",
+    #        binfunc='manual',
+    #        binarg = c(10, 100, 1000, 10000, 10000000)) %>%
+    # merge(binlabels, by='bin')
+    
+    # #Create new fields for comparison
+    # efp_format[, `:=`(
+    #   mar_spe_gefiswg = 200*(mar_gefis - mar_nat_wg22_ls_year)/(
+    #     mar_gefis + mar_nat_wg22_ls_year),
+    #   mar_spe_gefisref = 200*(mar_gefis - mar_ref)/(
+    #     mar_gefis + mar_ref),
+    #   ef_spe_gefisref_probable = 200*(MAR_EF_Probable_perc - efper_ref)/(
+    #     MAR_EF_Probable_perc + efper_ref),
+    #   ef_spe_gefisref_emcref = 200*(MAR_EF_ecpresentref_perc - efper_ref)/(
+    #     MAR_EF_ecpresentref_perc + efper_ref)
+    # )]
+    # 
+    # #Create unique ID for each study and site
+    # efp_format[, SiteUID := as.numeric(factor(do.call(paste0,.SD))),
+    #            .SDcols=c('POINT_X', 'POINT_Y')] #Update with POINT_X and POINT_Y
+  
+  #When multiple scenarios and one is clearly present-day, only keep that one 
+  #in_eftabsub_pre <- in_eftab[!(EFUID %in% c(2, 3, 4, 10, 35, 36, 37)),]
+  
+
   
   
   #Compare reference EF to GEFIS EF - % and vol
-
-  EFcompare_originalec_p <- ggplot(in_eftabsub_best[((eftype_ref != 'Habitat simulation') | is.na(eftype_ref)),], 
-         aes(x=(MAR_EF_Probable_perc), y=efper_ref)) +
+  EFcompare_best_p <- ggplot(eftab_best[var=='qtot' & eftype_ref =='Holistic',], 
+         aes(x=(efper_ref), y=efper_mod)) +
     geom_abline(alpha=1/2) +
-    geom_point(aes(group=Country,color=Country, shape=Country)) +
+    geom_point(aes(group=Country, color=Country)) + #aes(group=Country,color=Country, shape=Country)
+    geom_smooth() +
+    facet_grid(c("run", "eftype_format"), 
+               labeller = "label_both",
+               scales='free')
+  
+  plot(EFcompare_best_p)
+  
+  EFcompare_best_France_p <- ggplot(eftab_best[var=='qtot' &
+                                          Country == 'France',], 
+                             aes(x=(efper_ref), y=efper_mod)) +
+    geom_abline(alpha=1/2) +
+    geom_point() + #aes(group=Country,color=Country, shape=Country)
+    geom_smooth() +
+    facet_grid(c("run", "eftype_format"), 
+               labeller = "label_both",
+               scales='free')
+  plot(EFcompare_best_France_p)  
+  
+
+  
+    
     scale_shape_manual(values=rep(c(15, 16, 17, 18), ceiling(nlevels(in_eftabsub_best$Country)/4))) +
     #geom_quantile() +
     scale_x_continuous(name = 'GEFIS e-flow (% of MAR)', limits=c(0, 100)) +
