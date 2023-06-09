@@ -106,6 +106,7 @@ list(
     compare_hydrology(efp_efmod_join,
                       in_clz_labels = clz_labels)
   )
+  #,
   # 
   # tar_target(
   #   EMC_comparison,
@@ -115,7 +116,8 @@ list(
   # 
   # tar_target(
   #   EFestimate_comparison,
-  #   compare_EFestimate(eftab)
+  #   compare_EFestimate(in_efp_efmod_join = efp_efmod_join,
+  #                      in_eftab_ensemble = hydrology_comparison$eftab_ensemblemod)
   # ),
   # 
   # tar_target(
