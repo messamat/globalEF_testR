@@ -617,8 +617,8 @@ comp_derivedvar <- function(in_dt, copy=FALSE) {
   
   #Scale variables based on HydroATLAS v1.0 documentation and v1.0.9 processing
   in_dt2[, `:=`(
-    ari_ix_cav = ari_ix_cav/1000,
-    ari_ix_uav = ari_ix_uav/1000,
+    ari_ix_cav = ari_ix_cav/100,
+    ari_ix_uav = ari_ix_uav/100,
     dor_pc_pva = dor_pc_pva/10,
     lka_pc_cse = lka_pc_cse/10,
     lka_pc_use = lka_pc_use/10,
@@ -791,17 +791,17 @@ ggenvhist <- function(vartoplot, in_sitedt, in_rivdt, in_predvars,
                position = 'dodge', alpha=1/2, width=.6) +
       scale_fill_manual(values=c('#2b8cbe', '#dd3497'))
     
-  # } else if (vartoplot == "glc_pc_u16") {
-  #   rivclz <- in_rivdt[, sum(LENGTH_KM)/in_rivdt[,sum(LENGTH_KM)],
-  #                      by=glc_pc_u16]
-  #   gclz <- in_sitedt[,.N/in_sitedt[,.N],by=glc_pc_u16]
-  #   bindclz <- rbind(rivclz, gclz, idcol='source')%>%
-  #     setnames(c( 'source', vartoplot, 'density'))
-  #   
-  #   penvhist <- ggplot(bindclz, aes_string(x=vartoplot, y='density')) +
-  #     geom_bar(aes(fill=as.factor(source)), stat='identity',
-  #              position = 'identity', alpha=1/2, width=.6) +
-  #     scale_fill_manual(values=c('#2b8cbe', '#dd3497'))
+    # } else if (vartoplot == "glc_pc_u16") {
+    #   rivclz <- in_rivdt[, sum(LENGTH_KM)/in_rivdt[,sum(LENGTH_KM)],
+    #                      by=glc_pc_u16]
+    #   gclz <- in_sitedt[,.N/in_sitedt[,.N],by=glc_pc_u16]
+    #   bindclz <- rbind(rivclz, gclz, idcol='source')%>%
+    #     setnames(c( 'source', vartoplot, 'density'))
+    #   
+    #   penvhist <- ggplot(bindclz, aes_string(x=vartoplot, y='density')) +
+    #     geom_bar(aes(fill=as.factor(source)), stat='identity',
+    #              position = 'identity', alpha=1/2, width=.6) +
+    #     scale_fill_manual(values=c('#2b8cbe', '#dd3497'))
     #
     #     penvhist <- ggplot(in_sitedt, aes_string(x=vartoplot)) +
     #       geom_histogram(data=in_rivdt, aes(weight = LENGTH_KM),
@@ -857,15 +857,15 @@ getqstats <- function(dt, predicted, actual, rstudthresh= 3, log=FALSE) {
   mod_nooutliers <- lm(as.formula(in_form), data=dtsub)
   
   outstats <- dt[, list(#pearsonr = round(cor(get(y), get(x)), 3),
-                        mae = round(Metrics::mae(get(actual), get(predicted)), 2),
-                        smape = 100*round(Metrics::smape(get(actual), get(predicted)), 2),
-                        pbias = 100*round(-Metrics::percent_bias(get(actual), get(predicted)), 2), #Take the negative of percent_bias so that (predicted-actual) / abs(actual)
-                        rsq = round(summary(mod)$r.squared, 3),
-                        rsq_nooutliers = round(summary(mod_nooutliers)$r.squared, 3),
-                        sig_coef = if (nrow(summary(mod)$coefficients) > 1) {
-                          round(summary(mod)$coefficients[2,4], 3)} else {NaN},
-                        n_total = .N,
-                        noutliers = nrow(outrows)
+    mae = round(Metrics::mae(get(actual), get(predicted)), 2),
+    smape = 100*round(Metrics::smape(get(actual), get(predicted)), 2),
+    pbias = 100*round(-Metrics::percent_bias(get(actual), get(predicted)), 2), #Take the negative of percent_bias so that (predicted-actual) / abs(actual)
+    rsq = round(summary(mod)$r.squared, 3),
+    rsq_nooutliers = round(summary(mod_nooutliers)$r.squared, 3),
+    sig_coef = if (nrow(summary(mod)$coefficients) > 1) {
+      round(summary(mod)$coefficients[2,4], 3)} else {NaN},
+    n_total = .N,
+    noutliers = nrow(outrows)
   )
   ,]
   
@@ -1170,7 +1170,7 @@ compute_ef_smakhtin <- function(in_dt) {
                    by=.(month, year)] %>%
       .[, dates_m := as.Date(paste(year, month, '01', sep='-'))]
   }
-    
+  
   #
   
   
@@ -1188,7 +1188,7 @@ compute_efindices <- function(path, maxgap) {
   if (nyears > 0) {
     compute_ef_smakhtin(in_dt = dtsub)
   }
-
+  
 }
 
 #---------------------- Workflow function --------------------------------------
@@ -1233,8 +1233,15 @@ format_eftab <- function(in_efp) {
     .[, ecpresent_ref := gsub("\\s*[(]*[nN]ot sure whether present day[)]*", "", 
                               ecpresent_ref, perl=T)] %>%
     .[!(EFUID %in% c(41)),] %>%  #Exclude EFA for Senegal river at Manantali. This is the amount only for one flooding event in the year
+    .[!(EFUID %in% c(40)),] %>%  #Exclude EFA for Colorado River Delta. It doesn't make sense
+    .[!(Point_db == 'IWMI_1' & Country == 'Australia'),] %>%  #Remove Australian data from the original IWMI database to keep homogeneous data for the country (and because didn't QC them enough)
+    .[!(Point_db == 'IWMI_1' & UID_Mathis %in% c(60, 87)),] %>%  #Deleted in upstream steps. But didn't re-run everything (not well represented in network. Toosmall and imprecise)
     .[!((Point_db == 'IWMI_3' & UID_Mathis %in% seq(603, 651))),] %>% #Remove studies from Poland and Greece that for now cannot be used in analysis
-    .[!((Point_db == "Rhône_eaufrance" & UID_Mathis == 460)),] #Deleted in upstream steps. But didn't re-run everything
+    .[!((Point_db == "Rhône_eaufrance" & UID_Mathis == 460)),] %>% #Deleted in upstream steps. But didn't re-run everything
+    .[!((Point_db == 'Mexico_WWF' & UID_Mathis == 2622)),] %>% #Anomalous. The prescribed e-flow is 0.4L/s for a river with MAR of 1 m3/s
+    .[!((Point_db == 'Mexico_WWF' & UID_Mathis == 1252)),] %>% #Anomalous. The Mexican model estimates a discharge of 229 m3/s for a 350 km2 basin
+    .[!((Point_db == 'Mexico_WWF' & UID_Mathis == 3077)),] %>% #Anomalous. The Mexican model estimates a discharge of 670 m3/s for a 1000 km2 basin
+    .[!((Point_db == 'Mexico_WWF' & UID_Mathis == 1237)),] #Deleted in upstream steps. But didn't re-run everything
   
   #Convert all forms of NA to R-compatible NA
   efp_format[, (charcols) := lapply(
@@ -1243,7 +1250,7 @@ format_eftab <- function(in_efp) {
     .SDcols = charcols]
   
   #UID_Mathis_Original is not unique as it is associated with each regional dataset
-
+  
   #Convert mar_ref, efvol_ref, and efper_ref to numeric
   numcols <- c('mar_ref', 'efvol_ref', 'efper_ref')
   efp_format[, (numcols) := lapply(.SD, as.numeric), .SDcols = numcols]
@@ -1253,14 +1260,14 @@ format_eftab <- function(in_efp) {
   #For Brazil :
   #Convert Mean long term flow (m3/s) to Natural/Naturalised Mean Annual Runoff at E-flow Location (106m3)
   efp_format[Country == 'Brasil', mar_ref := efvol_ref*2]
-
-    
+  
+  
   unique(efp_format$ef_unit)
   #Make sure that all MAR values are in the same unit
   #31.5576 is the number of seconds in a year / 10^6
   efp_format[mar_unit == "m3 s-1", 
-      `:=` (mar_ref = mar_ref*31.5576,
-          mar_unit = "10^6m3 y-1")]
+             `:=` (mar_ref = mar_ref*31.5576,
+                   mar_unit = "10^6m3 y-1")]
   efp_format[ef_unit == "m3 s-1", 
              `:=` (efvol_ref = efvol_ref*31.5576,
                    ef_unit = "10^6m3 y-1")]
@@ -1275,13 +1282,15 @@ format_eftab <- function(in_efp) {
   #(despite the different scenarios)
   duplis <- efp_format[duplicated(paste0(Point_db, UID_Mathis)) | 
                          duplicated(paste0(Point_db, UID_Mathis), fromLast = T)
-                         ,]
-
+                       ,]
+  
+  efp_format[!is.na(mar_unit ) & !is.na(ef_unit) & !(mar_unit == ef_unit),] #There are no cases of differing units
   efp_format[is.na(efper_ref) & !is.na(efvol_ref) & !is.na(mar_ref), 
              efper_ref := 100*efvol_ref/mar_ref]
   efp_format[is.na(efvol_ref) & !is.na(efper_ref) & !is.na(mar_ref), 
-             efvol_ref := efper_ref*mar_ref/100]
-
+             `:=`(efvol_ref = efper_ref*mar_ref/100,
+                  ef_unit = mar_unit)]
+  
   #--- Format EMC ref-----------------------------------------------------------
   
   #Standardize EMC field
@@ -1317,11 +1326,11 @@ format_eftab <- function(in_efp) {
   #str_trim(gsub('Â', '', ecpresent_ref_formatted), side = 'both')
   efp_format[ecpresent_ref_formatted %in% c('A', 'A/B', 'B', 'B/C', 'C', 'C/D', 
                                             'D', 'D/E', 'E'),
-               ecpresent_reftype := 'Standard'] 
+             ecpresent_reftype := 'Standard'] 
   efp_format[ecpresent_ref_formatted %in% c('EWW', 'MaxW', 'MinW', 'MinW1', 
                                             'MinW2', 'RI', 'EWS', 'ET', 
                                             'Other', 'SR', 'MinD'),
-               ecpresent_reftype := 'Other'] 
+             ecpresent_reftype := 'Other'] 
   
   rectdf <- data.table(
     xmin = rep(-Inf, 4),
@@ -1439,7 +1448,8 @@ efdb_hists <- function(in_eftab) {
 #' 
 #' 
 #' @export
-layout_ggenvhist <- function(in_rivernetwork, in_sitedt, in_predvars) {
+layout_ggenvhist <- function(in_rivernetwork, in_sitedt, 
+                             in_predvars, out_path) {
   varstoplot_hist <- c(
     "UPLAND_SKM", "clz_cl_cmj", "ari_ix_uav", 
     "tmp_dc_uyr", "for_pc_use", "crp_pc_use", 
@@ -1469,7 +1479,8 @@ layout_ggenvhist <- function(in_rivernetwork, in_sitedt, in_predvars) {
   # ]]
   
   #Get scales
-  scalesenvhist <- formatscales(in_df=in_rivernetwork, varstoplot=varstoplot_hist)
+  scalesenvhist <- formatscales(in_df=in_rivernetwork, 
+                                varstoplot=varstoplot_hist)
   
   #Plot each facet
   penvhist_grobs <- lapply(varstoplot_hist, ggenvhist,
@@ -1481,16 +1492,23 @@ layout_ggenvhist <- function(in_rivernetwork, in_sitedt, in_predvars) {
   #penvhist_grobs[[length(penvhist_grobs) + 1]] <- leg
   
   #Plot
-  do.call("grid.arrange", list(grobs=penvhist_grobs, nrow=3, 
-                               vp=viewport(width=0.97, height=0.97))
-          )
+  out_plot <- do.call("grid.arrange", list(grobs=penvhist_grobs, nrow=3, 
+                                           vp=viewport(width=0.97, height=0.97))
+  )
+  
+  pdf(out_path,width=8, height=6)
+  print(out_plot)
+  dev.off()
+  
+  return(out_plot)
 }
 
 #------ country_summary  -------------
 #Histogram of number of sites x country x EFA_type
-country_summary <- function(in_tab) {
+country_summary <- function(in_tab, out_path) {
   in_tab_nodupli <- in_tab[
-    !duplicated(in_tab, by=c("Point_db", "UID_Mathis", "eftype_ref")),
+    !duplicated(in_tab, by=c("Point_db", "UID_Mathis", "eftype_ref")) &
+      !is.na(efvol_ref) | !is.na(efper_ref),
   ]
   
   in_tab_nodupli[, countryN := .N, by=Country]
@@ -1506,8 +1524,10 @@ country_summary <- function(in_tab) {
     scale_fill_brewer('Type of EFA', palette='Set2', na.value="grey") +
     theme_classic() +
     theme(#axis.title.y = element_text(vjust=-2),
-          plot.margin = unit( c(0.1, 0.6, 0.1, 0.1), 'cm'),
-          legend.position = c(0.7, 0.2))
+      plot.margin = unit( c(0.1, 0.6, 0.1, 0.1), 'cm'),
+      legend.position = c(0.7, 0.2))
+  
+  ggsave(out_path, plot=country_hist, width=4, height=4)
   
   return(country_hist)
 }
@@ -1533,9 +1553,10 @@ ecoregions_summary <- function(in_tab) {
 
 #------ map_ef -------------
 #-- Plot studies
-map_ef <- function(in_efp) {
-  in_efp <- unique(in_efp, by=c('POINT_X', 'POINT_Y'))
-                   
+map_ef <- function(in_efp, out_path) {
+  in_efp <- unique(in_efp[!is.na(efvol_ref) | !is.na(efper_ref)], 
+                   by=c('POINT_X', 'POINT_Y'))
+  
   datap <- st_as_sf(x = in_efp[!is.na(POINT_X),],
                     coords = c('POINT_X', 'POINT_Y'),
                     crs = 4326)
@@ -1592,8 +1613,8 @@ map_ef <- function(in_efp) {
     geom_sf(data=wcountries, color='#bdbdbd', alpha=1/2) +
     geom_sf(data = cluscentro_wintri, 
             aes(size=N), alpha=0.75) + #color = alpha('#3182bd', 1/2)
-    scale_size_continuous(name=str_wrap('Number of EFAs within 1000 km', 20),
-                          range=c(1, 6), breaks=c(1, 10, 100, 400)) +
+    scale_size_continuous(name=str_wrap('Number of e-flow assessment sites within 1000 km', 25),
+                          range=c(1, 6), breaks=c(1, 10, 100, 436)) +
     # scale_color_manual(name='', values=c('#08519c', '#2171b5', '#67a9cf', '#006d2c',
     #                                      '#41ab5d', '#fd8d3c', '#e31a1c',
     #                                      '#800026')) +
@@ -1604,7 +1625,14 @@ map_ef <- function(in_efp) {
           legend.text = element_text(size=9),
           legend.title = element_text(size=9),
           legend.key.height = unit(0.1,"in"),
-          legend.background = element_blank())
+          legend.background = element_blank()
+    )
+  
+  ggsave(out_path, dpi=600, width=6, height=4, units='in')
+  print(studiesmap)
+  dev.off()
+  
+  return(studiesmap)
   
 }
 
@@ -1624,7 +1652,7 @@ link_EFtoGRDC <- function(in_eftab_gefis, inp_riveratlas, inp_grdcp) {
                          totalYears_kept_o1800, HYRIV_ID)] %>%
     merge(in_net, by='HYRIV_ID')
   
-
+  
   #reduce the rivernetwork to only reaches in the same watershed as the starts
   netsub <- in_net[MAIN_RIV %in% unique(grdcdt$MAIN_RIV),]
   remove(in_net)
@@ -1667,17 +1695,17 @@ join_efp_to_efmod <- function(in_eftab, in_path_efp_mod) {
                     "path", "climate_scenario", "human_scenario", 'variable',
                     'eftype_2')
   efp_mod[, (colstoremove):=NULL]
-
+  
   #Average monthly values
   efp_mod_format <- efp_mod[, list(value = mean(value)), 
                             by=c("UID_Mathis", "Point_db","ghm", "gcm", "var", "res",
                                  "run", "eftype", "eftype_format", "emc")]
   
   #Bin records by upstream drainage area
-  binlabels <- label_manualbins(binarg=c(100, 1000, 2500, 10000, 10000000),
+  binlabels <- label_manualbins(binarg=c(100, 1000, 10000, 30000, 10000000),
                                 minval=min(in_eftab$up_area_skm_15s)) %>%
     data.table(bin_label = .,
-               bin=seq(1,6))
+               bin=seq(1,5))
   
   #Merge points with records
   eftab_modjoin_preprocessed <- merge(in_eftab,
@@ -1686,7 +1714,7 @@ join_efp_to_efmod <- function(in_eftab, in_path_efp_mod) {
                                       allow.cartesian=TRUE) %>%  
     bin_dt(binvar = "up_area_skm_15s",
            binfunc='manual',
-           binarg = c(100, 1000, 10000, 10000000)) %>%
+           binarg = c(100, 1000, 10000, 30000, 10000000)) %>%
     merge(binlabels, by='bin') %>%
     .[(Comment_mathis != 'Not well represented in HydroRIVERS') |  #Remove those whose location is unsure
         (is.na(Comment_mathis)),] %>%
@@ -1714,10 +1742,26 @@ join_efp_to_efmod <- function(in_eftab, in_path_efp_mod) {
              c('efvol_mod', 'mar_mod')) %>%
     .[, SHAPE := NULL]
   
-    #----- Match Smakhtin's estimates to reference vols based on ref EMC ---------
+  #The highest e-flows (Smakhtin_a_ for the Amazon yielded NAs because the values 
+  #were outside of the possible range for the raster.
+  #Compute them based on the ratio in EF value of Smakhtin_b
+  #between the actual pourpoint and the downstream-most location with data for the missing layer
+  eftab_modjoin_preprocessed[EFUID==427 & eftype_format=='smakthin_a' &
+                               run == 'h08_hadgem2-es_picontrol_1860soc' & 
+                               var=='qtot',
+                             efvol_mod := (144014784/132200856)*170483088
+  ]
+  
+  eftab_modjoin_preprocessed[EFUID==427 & eftype_format=='smakthin_a' &
+                               run == 'h08_miroc5_picontrol_1860soc'& 
+                               var=='qtot',
+                             efvol_mod := (141730848/129882280)*169503664
+  ]
+  
+  #----- Match Smakhtin's estimates to reference vols based on ref EMC ---------
   eftab_mod_smakthin <- dcast(
     eftab_modjoin_preprocessed[ecpresent_ref_simplemin %in% c("A", "B", "C", "D", "E") &
-                         (eftype == "smakhtinef") & (var == 'qtot')],
+                                 (eftype == "smakhtinef") & (var == 'qtot')],
     EFUID+UID_Mathis+Point_db+ecpresent_ref_formatted+ecpresent_ref_simplemin+
       ecpresent_ref_simplemax+run+var~eftype_format,
     value.var='efvol_mod')
@@ -1742,18 +1786,18 @@ join_efp_to_efmod <- function(in_eftab, in_path_efp_mod) {
   
   
   eftab_smakhtin <- merge(eftab_modjoin_preprocessed, 
-                eftab_mod_smakthin[, c("EFUID","UID_Mathis", "Point_db", 
-                                       "ecpresent_ref_formatted", "run", "var",
-                                       "smakhtin_emcavg"), 
-                                   with=F],
-                by=c("EFUID","UID_Mathis", "Point_db", 
-                     "ecpresent_ref_formatted", "run", "var"),
-                all.x=F) %>%
+                          eftab_mod_smakthin[, c("EFUID","UID_Mathis", "Point_db", 
+                                                 "ecpresent_ref_formatted", "run", "var",
+                                                 "smakhtin_emcavg"), 
+                                             with=F],
+                          by=c("EFUID","UID_Mathis", "Point_db", 
+                               "ecpresent_ref_formatted", "run", "var"),
+                          all.x=F) %>%
     .[, c( "eftype", "eftype_format", "emc", "efvol_mod"):=NULL] %>%
     melt(id.vars=names(.)[(names(.) != "smakhtin_emcavg")]) %>%
     setnames(c("variable", "value"), c("eftype_format", "efvol_mod")) 
   
-
+  
   eftab_modjoin <- rbind(eftab_smakhtin, eftab_modjoin_preprocessed, 
                          use.names=T, fill=T) %>%
     .[, efper_mod := fifelse(mar_mod >0, 100*efvol_mod/mar_mod, 0)] #Compute percentage EF
@@ -1771,13 +1815,16 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
                     .SDcols=c("UID_Mathis", "Point_db")] #164 sites without MAR value (114 without MAR but with EF)
   
   eftab_maf <- in_efp_efmod_join[!is.na(mar_ref),] %>% #remove sites without MAR value
-    unique(by=c('POINT_X', 'POINT_Y', 'run', 'var', 'emc')) #Keep unique sites
+    unique(by=c('POINT_X', 'POINT_Y', 'run', 'var', 'emc')) %>% #Keep unique sites
+    .[gcm != 'cru-era',] #Remove high-res pcr-globwb
   
   
   #Compute percentage error
   eftab_maf[, `:=` (APE = 100*abs((mar_mod-mar_ref)/mar_ref),
                     PE = 100*((mar_mod-mar_ref)/mar_ref)
-                    )]
+  )]
+  
+  eftab_maf[, DAo3000km2 := fifelse(up_area_skm_15s >= 3000, 'o3000', 'u3000')]
   
   #--------------------------Compare reference and model MAR for raw discharge -----
   plot_obspred_discharge <- ggplot(
@@ -1788,42 +1835,46 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
     geom_abline () +
     facet_grid(c("gcm", "ghm"), 
                labeller = "label_both") + 
-    theme_classic()
+    theme_classic() + 
+    theme(panel.grid.major.y = element_line())
   
   plot_APEarea_discharge <- ggplot(
     eftab_maf[var=='dis',], aes(x=up_area_skm_15s, y=APE)) +
     geom_point() +
     scale_x_log10(name= 'Upstream drainage area'~(km^2)) +
-    scale_y_log10(name= "Absolute error (%)") +
+    scale_y_log10(name= "Absolute error (%)", breaks=c(10,100,1000,1000000)) +
     geom_hline(yintercept=100) +
-    geom_vline(xintercept=c(100, 2500), linetype='dashed') +
+    geom_vline(xintercept=c(3000), linetype='dashed') +
     geom_smooth() +
     facet_grid(c("gcm", "ghm"), 
                labeller = "label_both") + 
-    theme_classic()
+    theme_classic()+ 
+    theme(panel.grid.major.y = element_line())
   
   #--------------------------Compare reference and model MAR for downscaled discharge -----
   plot_obspred_downscaledqtot <- ggplot(
-    eftab_maf[var=='qtot',], aes(x=mar_ref, y=mar_mod, color=Country_labelo10)) +
+    eftab_maf[var=='qtot',], aes(x=mar_ref, y=mar_mod)) + #, color=Country_labelo10)) +
     geom_point(alpha=1/4) +
     scale_x_log10(name= expression('Observed mean annual discharge'~(m^3~y^-1))) +
     scale_y_log10(name= expression('Predicted mean annual discharge'~(m^3~y^-1))) +
     geom_abline () +
-    geom_smooth(se=FALSE,span=1) +
+    geom_smooth(se=FALSE, method='lm') +
     facet_grid(c("gcm", "ghm"), 
                labeller = "label_both") + 
-    theme_classic()
+    theme_classic() + 
+    theme(panel.grid.major.y = element_line())
   
   #APE~Drainage area
   plot_APEarea_downscaledqtot <- ggplot(
     eftab_maf[var=='qtot',], 
-    aes(x=up_area_skm_15s, y=APE, 
-        color=Country_labelo10)) +
-    geom_point(alpha=1/5) +
+    aes(x=up_area_skm_15s, y=APE)) +
+    geom_point(alpha=1/5) + #aes(color=Country_labelo10)
     scale_x_log10(name= 'Upstream drainage area'~(km^2)) +
     scale_y_log10(name= "Absolute error (%)", breaks=c(1,10,100,1000,10000)) +
-    geom_vline(xintercept=c(100, 2500), linetype='dashed') +
-    geom_smooth(width=1, se=FALSE,method='lm') +
+    #scale_color_discrete(name = 'Country') +
+    geom_vline(xintercept=c(3000), linetype='dashed') +
+    #geom_quantile(quantiles=c(0.1, 0.5, 0.9), size=1) +
+    geom_smooth(size=1, se=FALSE) + #, color='black') +  #,method='lm') 
     facet_grid(c("gcm", "ghm"), 
                labeller = "label_both") + 
     theme_classic() + 
@@ -1835,10 +1886,12 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
     eftab_maf[var=='qtot' & gcm != 'cru-era',], 
     aes(x=ari_ix_uav, y=APE)) +
     geom_point(alpha=1/5, aes(color=Country_labelo10)) +
-    #scale_x_log10(name= 'Upstream drainage area'~(km^2)) +
+    scale_x_continuous(name= 'Global aridity index') +
     scale_y_log10(name= "Absolute error (%)", breaks=c(1,10,100,1000,10000)) +
+    scale_color_discrete(name = 'Country') +
     #geom_vline(xintercept=c(100, 2500), linetype='dashed') +
-    geom_smooth(width=1, se=FALSE, span=1) +
+    geom_smooth(size=1, se=FALSE, span=1, color='black', method='gam',
+                formula = y ~ s(x, bs = "cs", fx = TRUE, k = 3)) +
     facet_grid(c("gcm", "ghm"), 
                labeller = "label_both") + 
     theme_classic() + 
@@ -1849,10 +1902,14 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
     eftab_maf[var=='qtot' & gcm != 'cru-era',], 
     aes(x=urb_pc_use, y=APE)) +
     geom_point(alpha=1/5, aes(color=Country_labelo10)) +
-    #scale_x_log10(name= 'Upstream drainage area'~(km^2)) +
+    scale_x_continuous(name= 'Upstream urban cover (%)', breaks=c(0,25,50,75,100)) +
     scale_y_log10(name= "Absolute error (%)", breaks=c(1,10,100,1000,10000)) +
+    scale_color_discrete(name = 'Country') +
     #geom_vline(xintercept=c(100, 2500), linetype='dashed') +
-    geom_smooth(width=1, se=TRUE) +
+    #geom_smooth(size=1, se=TRUE, span=1) +
+    # geom_smooth(size=1, se=FALSE, span=1, color='black', method='gam',
+    #             formula = y ~ s(x, bs = "cs", fx = TRUE, k = 3)) +
+    geom_quantile(quantiles=c(0.1, 0.5, 0.9), color='black') +
     facet_grid(c("gcm", "ghm"), 
                labeller = "label_both") + 
     theme_classic() + 
@@ -1863,10 +1920,13 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
     eftab_maf[var=='qtot' & gcm != 'cru-era',], 
     aes(x=crp_pc_use, y=APE)) +
     geom_point(alpha=1/5, aes(color=Country_labelo10)) +
-    #scale_x_log10(name= 'Upstream drainage area'~(km^2)) +
+    scale_x_continuous(name= 'Upstream crop cover (%)', breaks=c(0,25,50,75,100)) +
     scale_y_log10(name= "Absolute error (%)", breaks=c(1,10,100,1000,10000)) +
+    scale_color_discrete(name = 'Country') +
     #geom_vline(xintercept=c(100, 2500), linetype='dashed') +
-    geom_smooth(width=1, se=TRUE, span=1) +
+    #geom_smooth(width=1, se=TRUE, span=1) +
+    geom_smooth(size=1, se=FALSE, span=1, color='black', method='gam',
+                formula = y ~ s(x, bs = "cs", fx = TRUE, k = 4)) +
     facet_grid(c("gcm", "ghm"), 
                labeller = "label_both") + 
     theme_classic() + 
@@ -1877,17 +1937,38 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
     eftab_maf[var=='qtot' & gcm != 'cru-era',], 
     aes(x=dor_pc_pva, y=APE)) +
     geom_point(alpha=1/5, aes(color=Country_labelo10)) +
-    #scale_x_log10(name= 'Upstream drainage area'~(km^2)) +
+    scale_x_sqrt(name= 'Degree of regulation', breaks=c(0,10,100,1000)) +
     scale_y_log10(name= "Absolute error (%)", breaks=c(1,10,100,1000,10000)) +
+    scale_color_discrete(name = 'Country') +
     #geom_vline(xintercept=c(100, 2500), linetype='dashed') +
-    geom_smooth(width=1, se=TRUE, span=1) +
+    #geom_smooth(width=1, se=TRUE, span=1) +
+    geom_smooth(size=1, se=FALSE, span=1, color='black', method='gam',
+                formula = y ~ s(x, bs = "cs", fx = TRUE, k = 4)) +
     facet_grid(c("gcm", "ghm"), 
                labeller = "label_both") + 
     theme_classic() + 
     theme(panel.grid.major.y = element_line())
   
+  #--------------------------Compare reference and model MAR for original and downscaled discharge for largest drainage basins -----
+  plot_large_rivers_APE_dis_vs_qtot <- ggplot(
+    dcast(
+      unique(eftab_maf[gcm == 'gfdl-esm2m' & ghm == 'watergap2-2c' & 
+                         up_area_skm_15s >= 30000,], by=c('EFUID', "var")),
+      EFUID + Point_db + UID_Mathis + up_area_skm_15s + Country_labelo10 ~ var,
+      value.var = 'APE'
+    ),
+    aes(x=dis, y=qtot)) +
+    geom_point(aes(color=Country_labelo10), alpha=1) +
+    scale_x_log10(name= expression('Absolute error at 30 arc-min (%)')) +
+    scale_y_log10(name= expression('Absolute error at 0.25 arc-min (%)')) +
+    geom_abline () +
+    #geom_smooth(aes(color=Country_labelo10), se=F, method='lm') +
+    coord_fixed() +
+    #facet_wrap(~var) + 
+    theme_classic() + 
+    theme(panel.grid.major.y = element_line())
   
-  #Compute statistics
+  #-------------------------- Compute statistics -------------------------------
   qstats_all <- eftab_maf[
     ,
     getqstats(
@@ -1898,7 +1979,69 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
       log = T
     ), 
     by=c('var', 'gcm', 'ghm')
-  ]
+  ] %>%
+    .[, N := eftab_maf[, nrow(unique(.SD[,c('Point_db', 'UID_Mathis')]))]]
+  
+  #Compute average difference between worst- and best-performing GCM models per GHM
+  avg_range_gcms <- qstats_all[, lapply(.SD, function(x) {max(x)-min(x)}),
+                               .SDcols=c('smape', 'pbias', 'rsq', 'rsq_nooutliers'),
+                               by=c('var', 'ghm')][
+                                 , lapply(.SD, mean),
+                                 .SDcols=c('smape', 'pbias', 'rsq', 'rsq_nooutliers'),
+                                 by='var']
+  
+  #Compute average difference between worst- and best-performing GhM models per GCM
+  avg_range_ghms <- qstats_all[, lapply(.SD, function(x) {max(x)-min(x)}),
+                               .SDcols=c('smape', 'pbias', 'rsq', 'rsq_nooutliers'),
+                               by=c('var', 'gcm')][
+                                 , lapply(.SD, mean),
+                                 .SDcols=c('smape', 'pbias', 'rsq', 'rsq_nooutliers'),
+                                 by='var']
+  
+  range_all <- qstats_all[, lapply(.SD, function(x) {max(x)-min(x)}),
+                          .SDcols=c('smape', 'pbias', 'rsq', 'rsq_nooutliers'),
+                          by=c('var')]
+  
+  #COmp
+  qstats_pixelthresh <- eftab_maf[
+    ,
+    getqstats(
+      dt = .SD,
+      actual = 'mar_ref',
+      predicted =  'mar_mod',
+      rstudthresh= 3,
+      log = T
+    ), 
+    by=c('var', 'gcm', 'ghm', 'DAo3000km2')
+  ] %>%
+    .[gcm == 'gfdl-esm2m' & ghm == 'watergap2-2c']  %>%
+    merge(eftab_maf[, eftab_maf[, nrow(unique(.SD[,c('Point_db', 'UID_Mathis')])),
+                                by='DAo3000km2']
+    ],
+    by='DAo3000km2') %>%
+    setnames('V1', 'N')
+  # %>%
+  #   .[ ,
+  #      lapply(.SD, mean), 
+  #      .SDcols = c('smape', 'pbias', 'rsq', 'rsq_nooutliers'),
+  #      by=c('var', 'DAo3000km2')] %>%
+  
+  
+  qstats_o30000 <- eftab_maf[up_area_skm_15s >= 30000
+                             ,
+                             getqstats(
+                               dt = .SD,
+                               actual = 'mar_ref',
+                               predicted =  'mar_mod',
+                               rstudthresh= 3,
+                               log = T
+                             ), 
+                             by=c('var', 'gcm', 'ghm')
+  ] %>%
+    .[, N := eftab_maf[up_area_skm_15s >= 30000,
+                       nrow(unique(.SD[,c('Point_db', 'UID_Mathis')]))]]%>%
+    .[gcm == 'gfdl-esm2m' & ghm == 'watergap2-2c'] 
+  
   
   qstats_da <- eftab_maf[
     ,
@@ -1911,6 +2054,9 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
     ), 
     by=c('var', 'gcm', 'ghm', 'bin_label')
   ] %>%
+    merge(eftab_maf[!duplicated(eftab_maf[,c("Point_db", "UID_Mathis")]) & !is.na(mar_ref), 
+                    .N, by='bin_label'],
+          by='bin_label') %>%
     setnames('bin_label', "Drainage area")
   
   qstats_clz <- eftab_maf[
@@ -1925,7 +2071,10 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
     by=c('var', 'gcm', 'ghm', 'clz_cl_cmj')
   ]  %>%
     merge(in_clz_labels, by.x='clz_cl_cmj', by.y='GEnZ_ID') %>%
-    .[, clz_label := paste0(GEnZ_Name, ", n=", n_total)] 
+    merge(eftab_maf[!duplicated(eftab_maf[,c("Point_db", "UID_Mathis")]) & !is.na(mar_ref), 
+                    .N, by='clz_cl_cmj'],
+          by='clz_cl_cmj') %>%
+    .[, clz_label := paste0(GEnZ_Name, ", n=", N)] 
   
   
   qstats_country <- eftab_maf[
@@ -1939,8 +2088,10 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
     ), 
     by=c('var', 'gcm', 'ghm', 'Country')
   ] %>%
-    .[, Country_label := paste0(Country, ", n=", n_total)]
-  
+    merge(eftab_maf[!duplicated(eftab_maf[,c("Point_db", "UID_Mathis")]) & !is.na(mar_ref), 
+                    .N, by='Country'],
+          by='Country') %>%
+    .[, Country_label := paste0(Country, ", n=", N)]
   
   #--------------- Plot statistics ---------------------------------------------
   qstats_dis_DA_plotformat <- melt(qstats_da[var=='dis', 
@@ -1950,7 +2101,7 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
                                    id.vars=c('gcm', 'ghm', 'Drainage area'))
   
   qstats_dis_DA_plot <- ggplot(qstats_dis_DA_plotformat,
-                               aes(x=ghm, y=mar_mod, color=gcm)) + 
+                               aes(x=ghm, y=value, color=gcm)) + 
     geom_point() +
     facet_grid(variable~`Drainage area`, scales='free') +
     theme_bw()
@@ -1966,26 +2117,28 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
       by=c('ghm', 'variable')]
   
   qstats_qtot_all_plot <- ggplot(qstats_qtot_all_plotformat,
-         aes(x=ghm, y=mar_mod)) + 
-    geom_segment(aes(xend=ghm, y=min_mar_mod, yend=max_mar_mod)) +
+                                 aes(x=ghm, y=value)) + 
+    geom_segment(aes(xend=ghm, y=min_value, yend=max_value)) +
     geom_point(aes(color=gcm), size=3) +
     facet_grid(variable~var, scales='free') +
     theme_bw()
   
   qstats_qtot_DA_plotformat <- melt(qstats_da[var=='qtot', 
-                                             c('gcm', 'ghm',  'Drainage area',
-                                               'smape', 'pbias', 'rsq_nooutliers'), 
-                                             with=F],
-                                   id.vars=c('gcm', 'ghm', 'Drainage area'))
+                                              c('gcm', 'ghm',  'Drainage area',
+                                                'smape', 'pbias', 'rsq_nooutliers'), 
+                                              with=F],
+                                    id.vars=c('gcm', 'ghm', 'Drainage area'))
   
   qstats_qtot_DA_plot <- ggplot(qstats_qtot_DA_plotformat,
-                               aes(x=`Drainage area`, y=mar_mod, color=gcm)) + 
+                                aes(x=`Drainage area`, y=value, color=gcm)) + 
     geom_point() +
     facet_grid(variable~ghm, scales='free') +
-    theme_bw()
+    theme_classic() + 
+    theme(panel.grid.major.y = element_line(),
+          axis.text.x = element_text(angle=30, hjust=1))
   
   qstats_qtot_country_plotformat <- melt(
-    qstats_country[var=='qtot' & n_total>10 & gcm != 'cru-era',
+    qstats_country[var=='qtot' & N>10 & gcm != 'cru-era',
                    c('gcm', 'ghm', 'var', 'Country_label',
                      'smape', 'pbias', 'rsq_nooutliers'), with=F],
     id.vars=c('gcm', 'ghm', 'var', 'Country_label')) %>%
@@ -1994,13 +2147,15 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
       by=c('ghm', 'variable', 'Country_label')]
   
   qstats_qtot_country_plot <- ggplot(qstats_qtot_country_plotformat,
-                                     aes(x=ghm, y=mar_mod, color=gcm)) + 
-    geom_segment(aes(xend=ghm, y=min_mar_mod, yend=max_mar_mod)) +
+                                     aes(x=ghm, y=value, color=gcm)) + 
+    geom_segment(aes(xend=ghm, y=min_value, yend=max_value)) +
     geom_point() +
-    facet_grid(variable~Country_label, scales='free')+
-    theme_bw()
+    facet_grid(variable~Country_label, scales='free') +
+    theme_classic() + 
+    theme(panel.grid.major.y = element_line(),
+          axis.text.x = element_text(angle=30, hjust=1))
   
-
+  
   #---- Select for each country the most performant combination of gcm and ghm -----
   #For each country with n>10, 
   #select the best combination of ghm and gcm
@@ -2013,6 +2168,26 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
   ) %>%
     .[, list(model_weight = .N), by=c('Country', 'ghm', 'gcm')]
   
+  #Create a table for display
+  qstats_country_melt <- melt(qstats_country[var=='qtot' & N >= 10,], 
+       id.vars=c('Country', 'var', 'gcm', 'ghm'),
+       measure.vars=c('smape', 'pbias', 'rsq')
+  )
+  
+  qstats_other <- melt(qstats_country[var=='qtot' & N >= 10,], 
+                       id.vars=c('Country', 'var', 'gcm', 'ghm'),
+                       measure.vars=c('smape', 'pbias', 'rsq')
+  )
+  
+  best_model_comb <- rbind(
+    qstats_country_melt[variable %in% c('smape', 'pbias'),] %>%
+      .[order(value), .SD[1,], by=c('Country', 'variable')],
+    qstats_country_melt[variable=='rsq',] %>%
+      .[order(-value), .SD[1,], by=c('Country', 'variable')]
+  ) %>%
+    .[, gcm_ghm := paste(gcm, ghm, sep=' + ')] %>%
+    dcast(Country~variable, value.var='gcm_ghm')
+
   #Compute overall weight for countries with n<10
   multicriterion_hydroweights_u10 <- qstats_country[n_total<10, 
                                                     unique(Country)] %>%
@@ -2059,7 +2234,7 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
   eftab_ensemblemod_maf <- eftab_ensemblemod[!is.na(mar_ref),] %>% #remove sites without MAR value
     unique(by=c('POINT_X', 'POINT_Y')) %>% #Keep unique sites
     .[, `:=` (APE = 100*abs((mar_mod-mar_ref)/mar_ref),
-            PE = 100*((mar_mod-mar_ref)/mar_ref)
+              PE = 100*((mar_mod-mar_ref)/mar_ref)
     )]
   #Compute statistics
   qstats_ensemble_all <- getqstats(
@@ -2109,18 +2284,19 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
     ), 
     by=c('Country_labelo10')
   ]
-
+  
   
   #---- Plot resulting model performance-----
   plot_obspred_ensemble <- ggplot(
     eftab_ensemblemod_maf, aes(x=mar_ref, y=mar_mod)) +
-    geom_point(aes(color=Country_labelo10), alpha=1/4) +
+    geom_point(aes(color=Country_labelo10), alpha=1/2) +
     scale_x_log10(name= expression('Observed mean annual discharge'~(m^3~y^-1))) +
     scale_y_log10(name= expression('Predicted mean annual discharge'~(m^3~y^-1))) +
     geom_abline () +
-    geom_smooth(se=FALSE,span=1) +
+    geom_smooth(se=FALSE,span=1, color='black') +
     theme_classic() +
-    facet_wrap(~Country_labelo10)
+    facet_wrap(~Country_labelo10) +
+    theme(legend.position = 'none')
   
   #PE~reference MAR
   plot_PEmar_downscaledqtot <- ggplot(
@@ -2130,11 +2306,12 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
     geom_hline(yintercept=0) +
     geom_point(alpha=1/2) +
     scale_x_log10(name= expression('Observed mean annual discharge'~(m^3~y^-1))) +
-    #scale_y_log10(name= "Absolute error (%)", breaks=c(1,10,100,1000,10000)) +
-    geom_smooth(width=1, se=T, span=1)  +
-    facet_wrap(~Country_labelo10, scales='free') +
+    scale_y_continuous(name= "Percentage error (%)") +
+    geom_smooth(size=1, se=F, span=1, color='black', alpha=1/2)  +
+    facet_wrap(~Country_labelo10, scales='free_y') +
     theme_classic() + 
-    theme(panel.grid.major.y = element_line())
+    theme(panel.grid.major.y = element_line(),
+          legend.position = 'none')
   
   
   #PE~Drainage area
@@ -2143,16 +2320,66 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
     aes(x=up_area_skm_15s, y=PE, 
         color=Country_labelo10)) +
     geom_hline(yintercept=0) +
-    geom_point(alpha=1/2) +
+    geom_point() +
     scale_x_log10(name= 'Upstream drainage area'~(km^2)) +
-    #scale_y_log10(name= "Absolute error (%)", breaks=c(1,10,100,1000,10000)) +
-    geom_smooth(width=1, se=FALSE,method='lm')  +
-    facet_wrap(~Country_labelo10, scales='free') +
+    scale_y_continuous(name= "Percentage error (%)") +
+    #geom_smooth(size=1, se=T, span=1, color='black', alpha=1/2)  +
+    geom_smooth(width=1, se=F,method='lm', color='black', alpha=1/2)  +
+    facet_wrap(~Country_labelo10, scales='free_y') +
     theme_classic() + 
-    theme(panel.grid.major.y = element_line())
+    theme(panel.grid.major.y = element_line(),
+          legend.position = 'none')
   
   ####NOT A MATTER OF DRAINAGE AREA
-
+  
+  
+  #---- Compare model performance by country -----
+  qstats_format_ensemble_vs_best <- eftab_maf[
+    ,
+    getqstats(
+      dt = .SD,
+      actual = 'mar_ref',
+      predicted =  'mar_mod',
+      rstudthresh= 3,
+      log = T
+    ), 
+    by=c('var', 'gcm', 'ghm', 'Country_labelo10')
+  ] %>% 
+    .[gcm == 'gfdl-esm2m' & ghm == 'watergap2-2c' & var=='qtot',] %>%
+    rbind(qstats_ensemble_country, use.names=T, fill = T) %>%
+    .[, approach_label := fifelse(is.na(gcm), 'ensemble', paste(gcm, ghm, sep=' + '))] %>%
+    melt(id.vars=c('Country_labelo10', 'approach_label'), 
+         measure.vars=c('smape', 'pbias', 'rsq')
+    )
+  
+  qstats_format_ensemble_vs_best_segment <- dcast(
+    qstats_format_ensemble_vs_best, 
+    Country_labelo10+variable~approach_label,
+    value.var = 'value'
+  ) %>%
+    .[variable %in% c('smape', 'pbias'), 
+      outcome := fifelse((abs(ensemble) - abs(`gfdl-esm2m + watergap2-2c`)) < 0,
+                         'improvement', 'deterioration')] %>%
+    .[variable == 'rsq', 
+      outcome := fifelse((ensemble-`gfdl-esm2m + watergap2-2c`) > 0,
+                         'improvement', 'deterioration')] 
+  
+  plot_ensemble_vs_best <- ggplot(qstats_format_ensemble_vs_best,
+                                  aes(x=Country_labelo10)) + 
+    geom_segment(data=qstats_format_ensemble_vs_best_segment,
+                 aes(xend= Country_labelo10, 
+                     y=ensemble, yend=`gfdl-esm2m + watergap2-2c`,
+                     color=outcome), size=2) + #x=x, ,
+    geom_point(aes(y=value, shape=approach_label), 
+               size=4, alpha=1/2) + #, height=1, width=0) +
+    scale_shape_discrete(name = 'Model') + 
+    scale_color_discrete(name = 'Outcome from using ensemble model') +
+    facet_wrap(~variable, scales='free') + 
+    theme_classic() +
+    theme(axis.title.x=element_blank())
+  
+  ####NOT A MATTER OF DRAINAGE AREA
+  
   #--------------- Write out statistics ----------------------------------------
   if (!dir.exists(outdir)) {
     dir.create(outdir)  
@@ -2163,28 +2390,32 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
                                       format(Sys.Date(), '%Y%m%d'), '.csv')))
   
   fwrite(qstats_da, file.path(outdir, 
-                           paste0('qstats_da',
-                                  format(Sys.Date(), '%Y%m%d'), '.csv')))
+                              paste0('qstats_da',
+                                     format(Sys.Date(), '%Y%m%d'), '.csv')))
   
   fwrite(qstats_clz, file.path(outdir, 
-                              paste0('qstats_clz',
-                                     format(Sys.Date(), '%Y%m%d'), '.csv')))
+                               paste0('qstats_clz',
+                                      format(Sys.Date(), '%Y%m%d'), '.csv')))
   
   fwrite(qstats_country, file.path(outdir, 
-                               paste0('qstats_country',
-                                      format(Sys.Date(), '%Y%m%d'), '.csv')))
+                                   paste0('qstats_country',
+                                          format(Sys.Date(), '%Y%m%d'), '.csv')))
   
   fwrite(qstats_ensemble_all, file.path(outdir, 
-                               paste0('qstats_ensemble_all',
-                                      format(Sys.Date(), '%Y%m%d'), '.csv')))
+                                        paste0('qstats_ensemble_all',
+                                               format(Sys.Date(), '%Y%m%d'), '.csv')))
   
   fwrite(qstats_ensemble_da, file.path(outdir, 
-                              paste0('qstats_ensemble_da',
-                                     format(Sys.Date(), '%Y%m%d'), '.csv')))
+                                       paste0('qstats_ensemble_da',
+                                              format(Sys.Date(), '%Y%m%d'), '.csv')))
   
   fwrite(qstats_ensemble_country, file.path(outdir, 
-                                   paste0('qstats_ensemble_country',
-                                          format(Sys.Date(), '%Y%m%d'), '.csv')))
+                                            paste0('qstats_ensemble_country',
+                                                   format(Sys.Date(), '%Y%m%d'), '.csv')))
+  
+  fwrite(best_model_comb, file.path(outdir, 
+                                    paste0('best_model_comb',
+                                           format(Sys.Date(), '%Y%m%d'), '.csv')))
   
   #--------------- Return results ----------------------------------------------
   return(list(plot_obspred_discharge = plot_obspred_discharge, 
@@ -2199,15 +2430,24 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
               qstats_qtot_all_plot = qstats_qtot_all_plot,
               qstats_qtot_DA_plot = qstats_qtot_DA_plot,
               qstats_qtot_country_plot = qstats_qtot_country_plot,
+              qstats_ensemble_vs_best = plot_ensemble_vs_best,
               table_all = qstats_all,
+              table_all_avg = qstats_all[, lapply(.SD, mean), 
+                                         .SDcols = c('smape', 'pbias', 'rsq',
+                                                     'rsq_nooutliers'),
+                                         by='var'],
+              table_pixel_thresh = qstats_pixelthresh,
               table_clz = qstats_clz,
               table_da = qstats_da,
               table_country = qstats_country,
+              table_range_gcms = avg_range_gcms,
+              table_range_ghms = avg_range_ghms,
+              table_range_all = range_all,
               table_ensemble_all = qstats_ensemble_all,
               table_ensemble_da = qstats_ensemble_da,
               table_ensemble_country = qstats_ensemble_country,
-              eftab_ensemblemod = eftab_ensemblemod 
-              ))
+              eftab_ensemblemod = eftab_ensemblemod
+  ))
 }
 
 #------ compare_EFestimate ------------------------------------------
@@ -2217,8 +2457,9 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
 compare_EFestimate <- function(in_efp_efmod_join,
                                in_eftab_ensemble) {
   
+  #Format data for ensemble estimates and all hydro models ---------------------
   format_eftab_forcomparison <- function(in_dt) {
-    #Format data
+    
     eftab <- in_dt %>% 
       .[efper_mod > 100, efper_mod := 100] %>% #9 cases 
       .[efper_ref <= 100,] %>% #27 sites are excluded.
@@ -2236,11 +2477,11 @@ compare_EFestimate <- function(in_efp_efmod_join,
   
   formatted_eftab_all <- format_eftab_forcomparison(in_efp_efmod_join)
   #Select best and worst scenarios based on PMAE
-  eftab_best_all <- formatted_eftab_all[order(-efvol_pmae),][
-    !(duplicated( #Remove duplicate sites (multiple scenarions, keeping the one with least EC difference when standard system)
+  eftab_best_all <- formatted_eftab_all[order(-efvol_pmae),] %>%
+    .[!(duplicated( #Remove duplicate sites (multiple scenarions, keeping the one with least EC difference when standard system)
       formatted_eftab_all[order(-efvol_pmae),], 
       by=c('POINT_X', 'POINT_Y', 'gcm', 'ghm', 'var', 'eftype_format'))),
-  ] 
+    ] 
   
   eftab_bestper_all <- formatted_eftab_all[order(-efper_pmae),][
     !(duplicated( #Remove duplicate sites (multiple scenarions, keeping the one with least EC difference when standard system)
@@ -2266,51 +2507,19 @@ compare_EFestimate <- function(in_efp_efmod_join,
   #Check whether there is correspondence between EMC and % EF
   plot_efper_ecpresent_ref <- ggplot(
     formatted_eftab_all[ecpresent_ref_formatted %in% c('A', 'A/B', 'B', 'B/C', 
-                                         'C', 'C/D', 'D', 'D/E', 'E') 
-          & Ncountry > 5 & !duplicated(EFUID),], 
+                                                       'C', 'C/D', 'D', 'D/E', 'E') 
+                        & Ncountry > 5 & !duplicated(EFUID),], 
     aes(x=ecpresent_ref_formatted, y=efper_ref)) + 
     geom_boxplot() +
-    stat_summary(fun.data = give.n, geom = "text", fun.y = median) +
+    stat_summary(fun.data = give.n, geom = "text", fun = median) +
     facet_wrap(~Country)
-
-  #Analysis by volume ----------------------------------------------------------
-  ######################################################################################UPDATE for ALL and ENSEMBLE
+  
+  ####################### Analysis by volume ##########################################################
   #--------------------- Stats -----------------------------------------
-  efvol_stats_all <- eftab_best_ensemble[!is.na(efvol_ref) & 
-                                  var=='qtot'& 
-                                  #Ncountry > 10 &
-                                  efvol_ref >0
-                                ,
-                                getqstats(
-                                  dt = .SD,
-                                  actual = 'efvol_ref',
-                                  predicted =  'efvol_mod',
-                                  rstudthresh= 3,
-                                  log = T
-                                ), 
-                                by=c('var', 'gcm', 'ghm', 
-                                     'eftype_format')
-  ] 
-  
-  
-  efvol_stats_country <- eftab_best_ensemble[!is.na(efvol_ref) & 
-                                             var=='qtot'& 
-                                             Ncountry > 10
-                                           ,
-                                           getqstats(
-                                             dt = .SD,
-                                             actual = 'efvol_ref',
-                                             predicted =  'efvol_mod',
-                                             rstudthresh= 3,
-                                             log = T
-                                           ), 
-                                           by=c('var', 'gcm', 'ghm', 
-                                                'Country', 'eftype_format')
-  ] 
-  
-  efvol_stats_eftype <- eftab_best_ensemble[!is.na(efvol_ref) & 
+  efvol_stats_all <- eftab_best_all[!is.na(efvol_ref) & 
                                       var=='qtot'& 
-                                      Ncountry > 10
+                                      #Ncountry > 10 &
+                                      efvol_ref >0
                                     ,
                                     getqstats(
                                       dt = .SD,
@@ -2320,236 +2529,519 @@ compare_EFestimate <- function(in_efp_efmod_join,
                                       log = T
                                     ), 
                                     by=c('var', 'gcm', 'ghm', 
-                                         'eftype_ref',
                                          'eftype_format')
   ] 
   
   
-  #------ Plots -------------------------------
-  EFcompare_best_vol_scatter <- ggplot(eftab_best_ensemble[var=='qtot',],
-                                        aes(x=(efvol_ref), y=efvol_mod)) +
-    geom_abline(alpha=1/2) +
-    geom_point() + #aes(group=Country,color=Country, shape=Country)
-    scale_x_log10() +
-    scale_y_log10() +
-    geom_smooth(span=1) +
-    facet_grid(c("run", "eftype_format"),
-               labeller = "label_both",
-               scales='free')
-  plot(EFcompare_best_vol_scatter)
+  efvol_stats_country <- eftab_best_all[!is.na(efvol_ref) & 
+                                          var=='qtot'& 
+                                          Ncountry > 10
+                                        ,
+                                        getqstats(
+                                          dt = .SD,
+                                          actual = 'efvol_ref',
+                                          predicted =  'efvol_mod',
+                                          rstudthresh= 3,
+                                          log = T
+                                        ), 
+                                        by=c('var', 'gcm', 'ghm', 
+                                             'Country', 'eftype_format')
+  ] 
   
-  EFcompare_best_vol_scatter_wg <- ggplot(
-    eftab_best_ensemble[var=='qtot'& ghm=='watergap2-2c'& gcm=='gfdl-esm2m',], 
-    aes(x=(efvol_ref), y=efvol_mod)) +
-    geom_abline(alpha=1/2) +
-    geom_point(aes(color=Country_labelo10)) + #aes(group=Country,color=Country, shape=Country)
-    scale_x_log10() + 
-    scale_y_log10() +
-    geom_smooth(span=1) +
-    facet_wrap(~eftype_format) +
-    theme_bw()
-  plot(EFcompare_best_vol_scatter_wg)  
-  
-  
-  EFcompare_best_vol_country_scatter_wg <- ggplot(
-    eftab_best_ensemble[var=='qtot'& ghm=='watergap2-2c'& gcm=='gfdl-esm2m' &
-               Ncountry > 10,], 
-    aes(x=(efvol_ref), y=efvol_mod)) +
-    geom_abline(alpha=1/2) +
-    geom_point() + #aes(group=Country,color=Country, shape=Country)
-    scale_x_log10() + 
-    scale_y_log10() +
-    geom_smooth(span=1) +
-    facet_grid(c("Country", "eftype_format"), 
-               labeller = "label_both") +
-    theme_bw()
-  plot(EFcompare_best_vol_country_scatter_wg)  
-  
-  
-  statsplot_all_smape <- ggplot(
-    efvol_stats_all, 
-    aes(x=eftype_format, y=smape, 
-        color=ghm, shape=gcm)) + 
-    geom_point() 
-  statsplot_all_smape
-  
-  
-  statsplot_all_smape_hydrosub <- ggplot(
-    efvol_stats_all[ghm %in% c('h08', 'watergap2-2c') &
-                      gcm %in% c('gfdl-esm2m', 'hadgem2-es')], 
-    aes(x=eftype_format, y=smape, 
-        color=ghm, shape=gcm)) + 
-    geom_point() 
-  statsplot_all_smape_hydrosub
-  
-  statsplot_all_pbias_hydrosub <- ggplot(
-    efvol_stats_all[ghm %in% c('h08', 'watergap2-2c') &
-                      gcm %in% c('gfdl-esm2m', 'hadgem2-es')],
-    aes(x=eftype_format, y=pbias, 
-        color=ghm, shape=gcm)) + 
-    geom_point() 
-  statsplot_all_pbias_hydrosub
-  
-  
-  statsplot_country_pbias_hydrosub <- ggplot(
-    efvol_stats_country[ghm %in% c('h08', 'watergap2-2c') &
-                               gcm %in% c('gfdl-esm2m', 'hadgem2-es')], 
-         aes(x=eftype_format, y=pbias, 
-             color=interaction(gcm, ghm))) + 
-    geom_point() +
-    scale_y_continuous(limits=c(-100,1000)) +
-    facet_wrap(~Country)
-  statsplot_country_pbias_hydrosub
-  
-  statsplot_country_rsq_hydrosub <- ggplot(
-    efvol_stats_country[ghm %in% c('h08', 'watergap2-2c') &
-                          gcm %in% c('gfdl-esm2m', 'hadgem2-es')], 
-    aes(x=eftype_format, y=rsq_nooutliers, 
-        color=interaction(gcm, ghm))) + 
-    geom_point() +
-    scale_y_continuous(limits=c(0, 1), breaks=seq(0,1,0.1)) +
-    facet_wrap(~Country, nrow=1) +
-    theme_bw()
-  statsplot_country_rsq_hydrosub
-  
-  statsplot_country_rsq_hydrosub <- ggplot(
-    efvol_stats_country[ghm %in% c('h08', 'watergap2-2c') &
-                          gcm %in% c('gfdl-esm2m', 'hadgem2-es'),], 
-    aes(x=eftype_format, y=rsq_nooutliers, 
-        color=interaction(gcm, ghm))) + 
-    geom_point() +
-    scale_y_continuous(limits=c(0, 1), breaks=seq(0,1,0.1)) +
-    facet_wrap(eftype_ref~Country) +
-    theme_bw()
-  statsplot_country_rsq_hydrosub
-  
-  
-  #Compare reference EF to GEFIS EF - % and vol
-  EFcompare_vol_best_eftype_p <- ggplot(
-    eftab_best_ensemble[var=='qtot' &
-                 ghm=='watergap2-2c'& gcm=='gfdl-esm2m' &
-                 !(eftype_ref %in% c('None specified', 'Other',
-                                     'Hydraulic rating')),], 
-    aes(x=(efvol_ref), y=efvol_mod)) +
-    geom_abline(alpha=1/2) +
-    geom_point(aes(group=Country, color=Country)) + #aes(group=Country,color=Country, shape=Country)
-    geom_smooth(span=1) +
-    scale_x_log10() +
-    scale_y_log10() +
-    #coord_fixed() +
-    #geom_smooth() +
-    facet_grid(c("eftype_ref", "eftype_format"), 
-               labeller = "label_both") +
-    theme_bw()
-  plot(EFcompare_vol_best_eftype_p)
-  
-  #Analysis by percentage ------------------------------------------------------
-  efper_stats_all_eftype <- eftab_bestper_ensemble[!is.na(efper_ref) & 
+  efvol_stats_eftype <- eftab_best_all[!is.na(efvol_ref) & 
                                          var=='qtot'& 
                                          Ncountry > 10
                                        ,
                                        getqstats(
                                          dt = .SD,
-                                         actual = 'efper_ref',
-                                         predicted =  'efper_mod',
+                                         actual = 'efvol_ref',
+                                         predicted =  'efvol_mod',
                                          rstudthresh= 3,
                                          log = T
                                        ), 
                                        by=c('var', 'gcm', 'ghm', 
+                                            'eftype_ref',
                                             'eftype_format')
   ] 
   
-  
-  efper_stats_country_eftype <- eftab_bestper_ensemble[!is.na(efper_ref) & 
-                                             var=='qtot'& 
-                                             Ncountry > 10
-                                           ,
-                                           getqstats(
-                                             dt = .SD,
-                                             actual = 'efper_ref',
-                                             predicted =  'efper_mod',
-                                             rstudthresh= 3,
-                                             log = T
-                                           ), 
-                                           by=c('var', 'gcm', 'ghm', 
-                                                'Country', 'eftype_format')
-  ] 
-  
-  efper_stats_eftype <- eftab_bestper_ensemble[!is.na(efper_ref) & 
-                                                var=='qtot'& 
-                                                Ncountry > 10
-                                              ,
-                                              getqstats(
-                                                dt = .SD,
-                                                actual = 'efper_ref',
-                                                predicted =  'efper_mod',
-                                                rstudthresh= 3,
-                                                log = T
-                                              ), 
-                                              by=c('var', 'gcm', 'ghm', 
-                                                   'Country', 'eftype_format',
-                                                   'eftype_ref')
+  #----- Only for ensemble estimates
+  efvol_stats_ensemble_all <- eftab_best_ensemble[!is.na(efvol_ref) & 
+                                                    var=='qtot'& 
+                                                    #Ncountry > 10 &
+                                                    efvol_ref >0
+                                                  ,
+                                                  getqstats(
+                                                    dt = .SD,
+                                                    actual = 'efvol_ref',
+                                                    predicted =  'efvol_mod',
+                                                    rstudthresh= 3,
+                                                    log = T
+                                                  ), 
+                                                  by=c('eftype_format')
   ] 
   
   
-  #Scatter plots
-  EFcompare_best_per_scatter <- ggplot(eftab_bestper_ensemble[var=='qtot',], 
-                                        aes(x=(efper_ref), y=efper_mod)) +
+  efvol_stats_ensemble_country <- eftab_best_ensemble[!is.na(efvol_ref) & 
+                                                        var=='qtot'& 
+                                                        Ncountry > 10
+                                                      ,
+                                                      getqstats(
+                                                        dt = .SD,
+                                                        actual = 'efvol_ref',
+                                                        predicted =  'efvol_mod',
+                                                        rstudthresh= 3,
+                                                        log = T
+                                                      ), 
+                                                      by=c('Country', 'eftype_format')
+  ] 
+  
+  efvol_stats_ensemble_country[efvol_stats_ensemble_country[
+    , .I[(smape == min(smape)) | (abs(pbias) == min(abs(pbias)))], by=Country]$V1,
+    label := eftype_format]
+  
+  efvol_stats_ensemble_eftype <- eftab_best_ensemble[!is.na(efvol_ref) & 
+                                                       var=='qtot'& 
+                                                       Ncountry > 10 &
+                                                       eftype_ref != 'Other'
+                                                     ,
+                                                     getqstats(
+                                                       dt = .SD,
+                                                       actual = 'efvol_ref',
+                                                       predicted =  'efvol_mod',
+                                                       rstudthresh= 3,
+                                                       log = T
+                                                     ), 
+                                                     by=c('eftype_ref',
+                                                          'eftype_format')
+  ] 
+  
+  efvol_stats_ensemble_eftype[efvol_stats_ensemble_eftype[
+    , .I[(smape == min(smape)) | (abs(pbias) == min(abs(pbias)))], by=eftype_ref]$V1,
+    label := eftype_format]
+  
+  efvol_stats_ensemble_eftypecountry <- eftab_best_ensemble[!is.na(efvol_ref) & 
+                                                              var=='qtot'& 
+                                                              Ncountry > 10 &
+                                                              eftype_ref != 'Other'
+                                                            ,
+                                                            getqstats(
+                                                              dt = .SD,
+                                                              actual = 'efvol_ref',
+                                                              predicted =  'efvol_mod',
+                                                              rstudthresh= 3,
+                                                              log = T
+                                                            ), 
+                                                            by=c('eftype_ref',
+                                                                 'eftype_format',
+                                                                 'Country')
+  ] 
+  
+  efvol_stats_ensemble_eftypecountry[efvol_stats_ensemble_eftypecountry[
+    , .I[(smape == min(smape)) | (abs(pbias) == min(abs(pbias)))], 
+    by=c('eftype_ref', 'Country')]$V1,
+    label := eftype_format]
+  
+  #--------------------- Plots -----------------------------------------------------------------
+  magnitude_lines_10 <-seq(log10(eftab_best_ensemble[var=='qtot', min(efvol_ref, na.rm=T)/2]),
+                           log10(eftab_best_ensemble[var=='qtot', 2*max(efvol_ref, na.rm=T)]),
+                           0.1) %>%
+    data.table(
+      x = 10^.,
+      y_low = 10*(10^.),
+      y_high = (10^.)/10
+    )
+  
+  magnitude_lines_2 <-seq(log10(eftab_best_ensemble[var=='qtot', min(efvol_ref, na.rm=T)/2]),
+                          log10(eftab_best_ensemble[var=='qtot', 2*max(efvol_ref, na.rm=T)]),
+                          0.1) %>%
+    data.table(
+      x = 10^.,
+      y_low = 2*(10^.),
+      y_high = (10^.)/2
+    )
+  
+  #All results----------------
+  EFcompare_ensemble_best_vol_scatter <- ggplot(eftab_best_ensemble[var=='qtot',]) +
+    geom_ribbon(data=magnitude_lines_10, aes(x=x, ymin=y_low, ymax=y_high), 
+                alpha=1/3, fill='#6CDAE7') +
     geom_abline(alpha=1/2) +
-    geom_point() + #aes(group=Country,color=Country, shape=Country)
-    # scale_x_log10() + 
-    # scale_y_log10() +
-    geom_smooth() +
-    facet_grid(c("run", "eftype_format"), 
-               labeller = "label_both",
-               scales='free')
-  plot(EFcompare_best_per_p)  
+    geom_point(aes(x=(efvol_ref), y=efvol_mod), alpha=1/5) + #aes(group=Country,color=Country, shape=Country)
+    scale_x_log10(name= expression('Reference e-flow volume'~(m^3~y^-1))) +
+    scale_y_log10(name= expression('Modeled e-flow volume'~(m^3~y^-1))) +
+    #geom_smooth(span=1) +
+    facet_wrap("eftype_format") +
+    theme_bw()
+  #plot(EFcompare_ensemble_best_vol_scatter)
+  
+  # EFcompare_all_best_vol_scatter <- ggplot(eftab_best_all[var=='qtot',],
+  #                                               aes(x=(efvol_ref), y=efvol_mod)) +
+  #   geom_abline(alpha=1/2) +
+  #   geom_point() + #aes(group=Country,color=Country, shape=Country)
+  #   scale_x_log10(name= expression('Reference e-flow volume'~(m^3~y^-1))) +
+  #   scale_y_log10(name= expression('Modeled e-flow volume'~(m^3~y^-1))) +
+  #   facet_grid(c("run", "eftype_format"), 
+  #              labeller = "label_both",
+  #              scales='free')
+  # plot(EFcompare_all_best_vol_scatter)
   
   
-  EFcompare_best_per_scatter_France <- ggplot(eftab_bestper_ensemble[var=='qtot' &
-                                                     Country == 'France',], 
-                                        aes(x=(efper_ref), y=efper_mod)) +
+  #By country--------------
+  EFcompare_ensemble_best_vol_country_scatter <- ggplot(
+    eftab_best_ensemble[var=='qtot',]) +
+    geom_ribbon(data=magnitude_lines_10, aes(x=x, ymin=y_low, ymax=y_high), 
+                alpha=1/3, fill='grey') + #'#6CDAE7'
     geom_abline(alpha=1/2) +
-    geom_point() + #aes(group=Country,color=Country, shape=Country)
-    # scale_x_log10() + 
-    # scale_y_log10() +
-    geom_smooth() +
-    facet_grid(c("run", "eftype_format"), 
-               labeller = "label_both",
-               scales='free')
-  plot(EFcompare_best_per_France_p)  
-
- 
-  
-  ggplot(eftab_bestper[var=='qtot' & Ncountry > 10 &
-                         ghm=='watergap2-2c'& gcm=='gfdl-esm2m',], 
-         aes(x=(mar_ref), y=efper_diff)) +
-    geom_hline(yintercept=0) +
-    geom_point() + #aes(group=Country,color=Country, shape=Country)
+    geom_point(aes(x=(efvol_ref), y=efvol_mod, color=eftype_ref), alpha=1/2) + #aes(group=Country,color=Country, shape=Country)
     scale_x_log10() + 
-    scale_y_continuous(limits=c(-100,100), expand=c(0,0)) +
-    geom_smooth(method='lm',span=1) +
-    facet_grid(c("Country", "eftype_format"), 
-               labeller = "label_both",
-               scales='free_x')
+    scale_y_log10() +
+    geom_smooth(aes(x=(efvol_ref), y=efvol_mod),
+                span=1) +
+    facet_grid(c("Country_labelo10", "eftype_format"), 
+               labeller = "label_both", scales = 'free_x') +
+    theme_bw()
+  #plot(EFcompare_ensemble_best_vol_country_scatter)  
   
-
+  
+  #By eftype--------------
+  EFcompare_ensemble_best_vol_eftype_scatter <- ggplot(
+    eftab_best_ensemble[var=='qtot' &
+                          !(eftype_ref %in% c('None specified', 'Other',
+                                              'Hydraulic rating')),]) +
+    geom_ribbon(data=magnitude_lines_10, aes(x=x, ymin=y_low, ymax=y_high), 
+                alpha=1/3, fill='grey') + #'#6CDAE7'
+    geom_abline(alpha=1/2) +
+    geom_point(aes(x=(efvol_ref), y=efvol_mod, color=Country_labelo10)) + #aes(group=Country,color=Country, shape=Country)
+    scale_x_log10() + 
+    scale_y_log10() +
+    geom_smooth(aes(x=(efvol_ref), y=efvol_mod),
+                span=1) +
+    facet_grid(c("eftype_ref", "eftype_format"), 
+               labeller = "label_both", scales = 'free_x') +
+    theme_bw()
+  #plot(EFcompare_ensemble_best_vol_eftype_scatter)  
   
   
-  #When multiple scenarios and one is clearly present-day, only keep that one 
-  #in_eftabsub_pre <- in_eftab[!(EFUID %in% c(2, 3, 4, 10, 35, 36, 37)),]
+  #All stats plots--------------
+  statsplot_all_vol_smape <- ggplot(
+    efvol_stats_all, 
+    aes(x=eftype_format, y=smape, 
+        color=ghm, shape=gcm)) + 
+    geom_point() +
+    theme_bw()
+  #statsplot_all_vol_smape
   
-
-
-
+  
+  statsplot_country_pbiassmape <- ggplot(
+    efvol_stats_ensemble_country, 
+    aes(x=smape, y=pbias, color=eftype_format)) + 
+    geom_abline(slope=0, alpha=1/2) +
+    geom_point(size=3, alpha=1/2) +
+    ggrepel::geom_text_repel(aes(label=label)) +
+    scale_x_continuous(limits=c(0,150), breaks=seq(0,150,25), expand=c(0,0)) +
+    scale_y_continuous(limits=c(-100,1000), breaks=seq(-100,1000, 100), 
+                       expand=c(0,0)) +
+    facet_wrap(~Country) +
+    theme_bw()
+  #statsplot_country_pbias_hydrosub
+  
+  
+  statsplot_eftype_pbiassmape <- ggplot(
+    efvol_stats_ensemble_eftype, 
+    aes(x=smape, y=pbias, color=eftype_format)) + 
+    geom_abline(slope=0, alpha=1/2) +
+    geom_point(size=3, alpha=1/2) +
+    ggrepel::geom_text_repel(aes(label=label)) +
+    scale_x_continuous(limits=c(0,150), breaks=seq(0,150,25), expand=c(0,0)) +
+    scale_y_continuous(limits=c(-100,1000), breaks=seq(-100,1000, 100), 
+                       expand=c(0,0)) +
+    facet_wrap(~eftype_ref) +
+    theme_bw()
+  #statsplot_eftype_pbiassmape
+  
+  statsplot_eftypecountry_pbiassmape <- ggplot(
+    efvol_stats_ensemble_eftypecountry[n_total > 3,],
+    aes(x=smape, y=pbias)) +
+    geom_abline(slope=0, alpha=1/2) +
+    #geom_line(aes(group=Country), alpha=1/2) +
+    geom_point(aes(color=eftype_format, shape=Country), size=3) +
+    #ggrepel::geom_text_repel(aes(label=label)) +
+    scale_shape_manual(values=c(8, 15,16,17,7, 18,9)) +
+    scale_x_continuous(limits=c(50,150), breaks=seq(50,150,25), expand=c(0,0)) +
+    scale_y_continuous(limits=c(-100,1000), breaks=seq(-100,1000, 100),
+                       expand=c(0,0)) +
+    facet_wrap(~eftype_ref) +
+    theme_bw()
+  #statsplot_eftypecountry_pbiassmape
+  
+  
+  ####################### Analysis by percentage ######################################################
+  #--------------------- Stats -----------------------------------------
+  #----- Only for ensemble estimates
+  efper_stats_all <- eftab_best_all[!is.na(efper_ref) & 
+                                      var=='qtot'& 
+                                      #Ncountry > 10 &
+                                      efper_ref >0
+                                    ,
+                                    getqstats(
+                                      dt = .SD,
+                                      actual = 'efper_ref',
+                                      predicted =  'efper_mod',
+                                      rstudthresh= 3,
+                                      log = T
+                                    ), 
+                                    by=c('var', 'gcm', 'ghm', 
+                                         'eftype_format')
+  ] 
+  
+  efper_stats_ensemble_all <- eftab_best_ensemble[!is.na(efper_ref) & 
+                                                    var=='qtot'& 
+                                                    #Ncountry > 10 &
+                                                    efper_ref >0
+                                                  ,
+                                                  getqstats(
+                                                    dt = .SD,
+                                                    actual = 'efper_ref',
+                                                    predicted =  'efper_mod',
+                                                    rstudthresh= 3,
+                                                    log = T
+                                                  ), 
+                                                  by=c('eftype_format')
+  ] 
+  
+  
+  efper_stats_ensemble_country <- eftab_best_ensemble[!is.na(efper_ref) & 
+                                                        var=='qtot'& 
+                                                        Ncountry > 10
+                                                      ,
+                                                      getqstats(
+                                                        dt = .SD,
+                                                        actual = 'efper_ref',
+                                                        predicted =  'efper_mod',
+                                                        rstudthresh= 3,
+                                                        log = T
+                                                      ), 
+                                                      by=c('Country', 'eftype_format')
+  ] 
+  
+  efper_stats_ensemble_country[efper_stats_ensemble_country[
+    , .I[(smape == min(smape)) | (abs(pbias) == min(abs(pbias)))], by=Country]$V1,
+    label := eftype_format]
+  
+  efper_stats_ensemble_eftype <- eftab_best_ensemble[!is.na(efper_ref) & 
+                                                       var=='qtot'& 
+                                                       Ncountry > 10 &
+                                                       eftype_ref != 'Other'
+                                                     ,
+                                                     getqstats(
+                                                       dt = .SD,
+                                                       actual = 'efper_ref',
+                                                       predicted =  'efper_mod',
+                                                       rstudthresh= 3,
+                                                       log = T
+                                                     ), 
+                                                     by=c('eftype_ref',
+                                                          'eftype_format')
+  ] 
+  
+  efper_stats_ensemble_eftype[efper_stats_ensemble_eftype[
+    , .I[(smape == min(smape)) | (abs(pbias) == min(abs(pbias)))], by=eftype_ref]$V1,
+    label := eftype_format]
+  
+  
+  
+  #--------------------- Plots -----------------------------------------------------------------
+  #All results----------------
+  EFcompare_ensemble_best_per_scatter <- ggplot(eftab_best_ensemble[var=='qtot',]) +
+    geom_abline(alpha=1/2) +
+    geom_point(aes(x=(efper_ref), y=efper_mod), alpha=1/5) + #aes(group=Country,color=Country, shape=Country)
+    scale_x_continuous(name= expression('Reference e-flow volume'~(m^3~y^-1))) +
+    scale_y_continuous(name= expression('Modeled e-flow volume'~(m^3~y^-1))) +
+    #geom_smooth(span=1) +
+    facet_wrap("eftype_format") +
+    theme_bw()
+  #plot(EFcompare_ensemble_best_per_scatter)
+  
+  # EFcompare_all_best_per_scatter <- ggplot(eftab_best_all[var=='qtot',],
+  #                                               aes(x=(efper_ref), y=efper_mod)) +
+  #   geom_abline(alpha=1/2) +
+  #   geom_point() + #aes(group=Country,color=Country, shape=Country)
+  #   scale_x_log10(name= expression('Reference e-flow volume'~(m^3~y^-1))) +
+  #   scale_y_log10(name= expression('Modeled e-flow volume'~(m^3~y^-1))) +
+  #   facet_grid(c("run", "eftype_format"), 
+  #              labeller = "label_both",
+  #              scales='free')
+  # plot(EFcompare_all_best_per_scatter)
+  
+  
+  #By country--------------
+  
+  EFcompare_ensemble_best_per_country_scatter <- ggplot(
+    eftab_best_ensemble[var=='qtot',]) +
+    # geom_ribbon(data=magnitude_lines, aes(x=x, ymin=y_low, ymax=y_high), 
+    #             alpha=1/3, fill='#6CDAE7') +
+    geom_abline(alpha=1/2) +
+    geom_point(aes(x=(efper_ref), y=efper_mod, color=Country_labelo10)) + #aes(group=Country,color=Country, shape=Country)
+    scale_x_continuous() + 
+    scale_y_continuous() +
+    geom_smooth(aes(x=(efper_ref), y=efper_mod),
+                method='lm') +
+    facet_grid(c("Country_labelo10", "eftype_format"), 
+               labeller = "label_both", scales = 'free_x') +
+    theme_bw()
+  #plot(EFcompare_ensemble_best_per_country_scatter)  
+  
+  
+  #By eftype--------------
+  EFcompare_ensemble_best_per_eftype_scatter <- ggplot(
+    eftab_best_ensemble[var=='qtot' &
+                          !(eftype_ref %in% c('None specified', 'Other',
+                                              'Hydraulic rating')),]) +
+    geom_abline(alpha=1/2) +
+    geom_point(aes(x=(efper_ref), y=efper_mod, color=Country_labelo10)) + #aes(group=Country,color=Country, shape=Country)
+    scale_x_continuous() + 
+    scale_y_continuous() +
+    geom_smooth(aes(x=(efper_ref), y=efper_mod),
+                method='lm') +
+    facet_grid(c("eftype_ref", "eftype_format"), 
+               labeller = "label_both", scales = 'free_x') +
+    theme_bw()
+  #plot(EFcompare_ensemble_best_per_eftype_scatter)  
+  
+  #Difference in percentage by MAR--------------
+  EFMARdiff_ensemble_best_per_country <- ggplot(
+    eftab_best_ensemble[var=='qtot',],
+    aes(x=mar_ref, y=efper_diff)) +
+    # geom_ribbon(data=magnitude_lines, aes(x=x, ymin=y_low, ymax=y_high), 
+    #             alpha=1/3, fill='#6CDAE7') +
+    geom_abline(alpha=1/2, slope=0) +
+    geom_point(aes(color=Country_labelo10)) + #aes(group=Country,color=Country, shape=Country)
+    scale_x_log10() + 
+    scale_y_continuous() +
+    geom_smooth(method='lm') +
+    facet_grid(c("Country_labelo10", "eftype_format"), 
+               labeller = "label_both", scales = 'free_x') +
+    theme_bw()
+  #plot(EFMARdiff_ensemble_best_per_country )  
+  
+  #Difference in percentage by DA--------------
+  EFDAdiff_ensemble_best_per_country <- ggplot(
+    eftab_best_ensemble[var=='qtot',],
+    aes(x=up_area_skm_15s, y=efper_diff)) +
+    # geom_ribbon(data=magnitude_lines, aes(x=x, ymin=y_low, ymax=y_high), 
+    #             alpha=1/3, fill='#6CDAE7') +
+    geom_abline(alpha=1/2, slope=0) +
+    geom_point(aes(color=Country_labelo10)) + #aes(group=Country,color=Country, shape=Country)
+    scale_x_log10() + 
+    scale_y_continuous() +
+    geom_smooth(method='lm') +
+    facet_grid(c("Country_labelo10", "eftype_format"), 
+               labeller = "label_both", scales = 'free') +
+    theme_bw()
+  #plot(EFDAdiff_ensemble_best_per_country )  
+  
+  
+  
+  #Difference in percentage by aridity between countries --------------
+  EFGAIdiff_ensemble_best_per_country <- ggplot(
+    eftab_best_ensemble[var=='qtot',],
+    aes(x=ari_ix_uav, y=efper_diff)) +
+    # geom_ribbon(data=magnitude_lines, aes(x=x, ymin=y_low, ymax=y_high), 
+    #             alpha=1/3, fill='#6CDAE7') +
+    geom_abline(alpha=1/2, slope=0) +
+    geom_point(aes(color=Country_labelo10)) + #aes(group=Country,color=Country, shape=Country)
+    scale_x_continuous() + 
+    scale_y_continuous() +
+    geom_smooth(method='lm') +
+    facet_grid(c("Country_labelo10", "eftype_format"), 
+               labeller = "label_both", scales = 'free') +
+    theme_bw()
+  #plot(EFGAIdiff_ensemble_best_per_country)  
+  
+  #Difference in percentage by aridity between eftypes --------------
+  EFGAIdiff_ensemble_best_per_eftype <- ggplot(
+    eftab_best_ensemble[var=='qtot'  &
+                          !(eftype_ref %in% c('None specified', 'Other',
+                                              'Hydraulic rating')),],
+    aes(x=ari_ix_uav, y=efper_diff)) +
+    # geom_ribbon(data=magnitude_lines, aes(x=x, ymin=y_low, ymax=y_high), 
+    #             alpha=1/3, fill='#6CDAE7') +
+    geom_abline(alpha=1/2, slope=0) +
+    geom_point(aes(color=Country_labelo10)) + #aes(group=Country,color=Country, shape=Country)
+    scale_x_continuous() + 
+    scale_y_continuous() +
+    geom_smooth(span=1) +
+    facet_grid(c("eftype_ref", "eftype_format"), 
+               labeller = "label_both", scales = 'free') +
+    theme_bw()
+  #plot(EFGAIdiff_ensemble_best_per_eftype)  
+  
+  
+  #All stats plots--------------
+  statsplot_all_per_smape <- ggplot(
+    efper_stats_all, 
+    aes(x=eftype_format, y=smape, 
+        color=ghm, shape=gcm)) + 
+    geom_point() +
+    theme_bw()
+  #statsplot_all_per_smape
+  
+  
+  # statsplot_country_pbiassmape <- ggplot(
+  #   efper_stats_ensemble_country,
+  #   aes(x=smape, y=pbias, color=eftype_format)) +
+  #   geom_abline(slope=0, alpha=1/2) +
+  #   geom_point(size=3, alpha=1/2) +
+  #   ggrepel::geom_text_repel(aes(label=label)) +
+  #   scale_x_continuous(limits=c(0,150), breaks=seq(0,150,25), expand=c(0,0)) +
+  #   scale_y_continuous(limits=c(-100,1000), breaks=seq(-100,1000, 100),
+  #                      expand=c(0,0)) +
+  #   facet_wrap(~Country) +
+  #   theme_bw()
+  # statsplot_country_pbias_hydrosub
+  # 
+  # 
+  # statsplot_eftype_pbiassmape <- ggplot(
+  #   efper_stats_ensemble_eftype,
+  #   aes(x=smape, y=pbias, color=eftype_format)) +
+  #   geom_abline(slope=0, alpha=1/2) +
+  #   geom_point(size=3, alpha=1/2) +
+  #   ggrepel::geom_text_repel(aes(label=label)) +
+  #   scale_x_continuous(limits=c(0,150), breaks=seq(0,150,25), expand=c(0,0)) +
+  #   scale_y_continuous(limits=c(-100,1000), breaks=seq(-100,1000, 100),
+  #                      expand=c(0,0)) +
+  #   facet_wrap(~eftype_ref) +
+  #   theme_bw()
+  # statsplot_eftype_pbiassmape
+  
   
   return(list(
-    EFcompare_originalec_p  = EFcompare_originalec_p ,
-    EFcompare_bestec_p = EFcompare_bestec_p ,
-    table_country =  efstats_country,
-    table_eftype_best =  efstats_eftype_best,
-    table_eftype_worst =  efstats_eftype_worst,
-    table_emcref = efstats_eftype_emcref
+    plot_efper_ecpresent_ref,
+    efvol_stats_all,
+    efvol_stats_country,
+    efvol_stats_eftype,
+    efvol_stats_ensemble_all,
+    efvol_stats_ensemble_country,
+    efvol_stats_ensemble_eftype,
+    efvol_stats_ensemble_eftypecountry,
+    EFcompare_ensemble_best_vol_scatter,
+    EFcompare_ensemble_best_vol_country_scatter,
+    EFcompare_ensemble_best_vol_eftype_scatter,
+    statsplot_all_vol_smape, 
+    statsplot_country_pbiassmape,
+    statsplot_eftype_pbiassmape,
+    statsplot_eftypecountry_pbiassmape,
+    efper_stats_all,
+    efper_stats_ensemble_all,
+    efper_stats_ensemble_country,
+    efper_stats_ensemble_eftype,
+    EFcompare_ensemble_best_per_scatter,
+    EFcompare_ensemble_best_per_country_scatter,
+    EFcompare_ensemble_best_per_eftype_scatter, 
+    EFMARdiff_ensemble_best_per_country,
+    EFDAdiff_ensemble_best_per_country, 
+    EFGAIdiff_ensemble_best_per_country,
+    EFGAIdiff_ensemble_best_per_eftype,
+    statsplot_all_per_smape 
   ))
 }
 
@@ -2564,11 +3056,11 @@ check_masking <- function(in_eftab) {
   #Show missing data
   ggplot(in_eftab, aes(x=as.factor(paste0(Country), y=1-MAR_boolean_ratio))) +
     geom_boxplot()
-    
+  
   efmaskper_p <- ggplot(in_eftab,
-         aes(x=str_wrap(as.factor(plabel_mask), 20), 
-             y=100*(1-EMC_boolean_ratio),
-             fill=Country, color=Country)) +
+                        aes(x=str_wrap(as.factor(plabel_mask), 20), 
+                            y=100*(1-EMC_boolean_ratio),
+                            fill=Country, color=Country)) +
     #tar_makegeom_hline(yintercept=30) +
     geom_jitter(alpha=1/3) +
     geom_boxplot(alpha=1/2) +
