@@ -226,45 +226,37 @@ list(
              height=8
       )
     }
-    ,
     
     
     
-    # plot_efper_ecpresent_ref,
-    # efvol_stats_all,
-    # efvol_stats_country,
-    # efvol_stats_eftype,
-    # efvol_stats_ensemble_all,
-    # efvol_stats_ensemble_country,
-    # efvol_stats_ensemble_eftype,
-    # efvol_stats_ensemble_eftypecountry,
-    # EFcompare_ensemble_best_vol_scatter,
-    # EFcompare_ensemble_best_vol_country_scatter,
-    # EFcompare_ensemble_best_vol_eftype_scatter,
-    # statsplot_all_vol_smape, 
-    # statsplot_country_pbiassmape,
-    # statsplot_eftype_pbiassmape,
-    # statsplot_eftypecountry_pbiassmape,
-    # efper_stats_all,
-    # efper_stats_ensemble_all,
-    # efper_stats_ensemble_country,
-    # efper_stats_ensemble_eftype,
-    # EFcompare_ensemble_best_per_scatter,
-    # EFcompare_ensemble_best_per_country_scatter,
-    # EFcompare_ensemble_best_per_eftype_scatter, 
-    # EFMARdiff_ensemble_best_per_country,
-    # EFDAdiff_ensemble_best_per_country, 
-    # EFGAIdiff_ensemble_best_per_country,
-    # EFGAIdiff_ensemble_best_per_eftype,
-    # statsplot_all_per_smape 
     
-    # table_all = qstats_all,
-    # table_clz = qstats_clz,
-    # table_da = qstats_da,
-    # table_country = qstats_country,
-    # table_ensemble_all = qstats_ensemble_all,
-    # table_ensemble_da = qstats_ensemble_da,
-    # table_ensemble_country = qstats_ensemble_country,
-    # eftab_ensemblemod = eftab_ensemblemod 
+    # EFestimate_comparison$plot_efper_ecpresent_ref
+    # EFestimate_comparison$efvol_stats_all
+    # EFestimate_comparison$efvol_stats_country
+    # EFestimate_comparison$efvol_stats_eftype
+    # EFestimate_comparison$efvol_stats_ensemble_all
+    # EFestimate_comparison$efvol_stats_ensemble_country
+    # EFestimate_comparison$efvol_stats_ensemble_eftype
+    # EFestimate_comparison$efvol_stats_ensemble_eftypecountry
+    # EFestimate_comparison$EFcompare_ensemble_best_vol_scatter
+    # EFestimate_comparison$EFcompare_ensemble_best_vol_country_scatter
+    # EFestimate_comparison$EFcompare_ensemble_best_vol_eftype_scatter
+    # EFestimate_comparison$statsplot_all_vol_smape
+    # EFestimate_comparison$statsplot_country_pbiassmape
+    # EFestimate_comparison$statsplot_eftype_pbiassmape
+    # EFestimate_comparison$statsplot_eftypecountry_pbiassmape
+    # EFestimate_comparison$efper_stats_all
+    # EFestimate_comparison$efper_stats_ensemble_all
+    # EFestimate_comparison$efper_stats_ensemble_country
+    # EFestimate_comparison$efper_stats_ensemble_eftype
+    # EFestimate_comparison$EFcompare_ensemble_best_per_scatter
+    # EFestimate_comparison$EFcompare_ensemble_best_per_country_scatter
+    # EFestimate_comparison$EFcompare_ensemble_best_per_eftype_scatter
+    # EFestimate_comparison$EFMARdiff_ensemble_best_per_country
+    # EFestimate_comparison$EFDAdiff_ensemble_best_per_country 
+    # EFestimate_comparison$EFGAIdiff_ensemble_best_per_country
+    # EFestimate_comparison$EFGAIdiff_ensemble_best_per_eftype
+    # EFestimate_comparison$statsplot_all_per_smape 
+    
   )
 )
