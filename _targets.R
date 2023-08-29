@@ -39,19 +39,19 @@ list(
   
   tar_target(
     eftab,
-     read_excel(path=path_efp_metadata, sheet='Data') %>%
+    read_excel(path=path_efp_metadata, sheet='Data') %>%
       format_eftab %>%
       merge(efp_riverjoin,
             by=c("Point_db", "UID_Mathis")) %>%
       comp_derivedvar
   ),
-
+  
   tar_target(
     riveratlas_varsdt,
     selectformat_predvars(inp_riveratlas_meta = path_riveratlas_meta,
                           in_eftab = eftab)
   ),
-
+  
   tar_target(
     rivernetwork,
     rformat_network(in_predvars = riveratlas_varsdt,
@@ -59,7 +59,7 @@ list(
                     inp_riveratlas = path_riveratlas
     )
   ),
-
+  
   tar_target(
     envhist,
     layout_ggenvhist(in_rivernetwork = rivernetwork,
@@ -83,7 +83,7 @@ list(
       )
     )
   ),
-
+  
   tar_target(
     efmap, #To redo with bigger sizes for France
     map_ef(in_efp = eftab,
@@ -93,12 +93,12 @@ list(
                                        '.png')
            ))
   ),
-
+  
   tar_target(
     efp_efmod_join,
     join_efp_to_efmod(eftab,
                       path_efp_mod)
-
+    
   ),
   
   tar_target(
@@ -129,12 +129,12 @@ list(
       minmax_MAF = efp_efmod_join[(!is.na(efvol_ref) | !is.na(efper_ref)), #By method type
                                   range(mar_ref, na.rm=T)],
       unique_sites_chars = efp_efmod_join[(!is.na(efvol_ref) | !is.na(efper_ref)) & 
-                                   !(duplicated(efp_efmod_join, 
-                                                by=c("UID_Mathis", "Point_db"))) & 
-                                     Country != 'France', 
-                                 list(median_MAF = median(mar_ref, na.rm=T),
-                                      median_DA = median(up_area_skm_15s),
-                                      N_DA_u100skm = .SD[up_area_skm_15s<100, .N, by=Country])
+                                            !(duplicated(efp_efmod_join, 
+                                                         by=c("UID_Mathis", "Point_db"))) & 
+                                            Country != 'France', 
+                                          list(median_MAF = median(mar_ref, na.rm=T),
+                                               median_DA = median(up_area_skm_15s),
+                                               N_DA_u100skm = .SD[up_area_skm_15s<100, .N, by=Country])
       ]
     )
   ),  
@@ -150,6 +150,7 @@ list(
     compare_EFestimate(in_efp_efmod_join = efp_efmod_join,
                        in_eftab_ensemble = hydrology_comparison$eftab_ensemblemod)
   ),
+  
   tar_target(
     export_hydro_comparison,
     command = {
@@ -220,43 +221,64 @@ list(
              height=8
       );
       ggsave(file.path(resdir, 'figures', 'hydrology_comparison',
+                       paste0('plot_obspred_ensemble.png')),
+             hydrology_comparison$plot_obspred_ensemble,
+             width=8,
+             height=8
+      );
+      ggsave(file.path(resdir, 'figures', 'hydrology_comparison',
                        paste0('qstats_qtot_country_plot.png')),
              hydrology_comparison$qstats_qtot_country_plot,
              width=8,
              height=8
+      );
+      ggsave(file.path(resdir, 'figures', 'hydrology_comparison',
+                       paste0('plot_PEarea_downscaledqtot.png')),
+             hydrology_comparison$plot_PEarea_downscaledqtot,
+             width=8,
+             height=8
       )
     }
-    
-    
-    
-    
-    # EFestimate_comparison$plot_efper_ecpresent_ref
-    # EFestimate_comparison$efvol_stats_all
-    # EFestimate_comparison$efvol_stats_country
-    # EFestimate_comparison$efvol_stats_eftype
-    # EFestimate_comparison$efvol_stats_ensemble_all
-    # EFestimate_comparison$efvol_stats_ensemble_country
-    # EFestimate_comparison$efvol_stats_ensemble_eftype
-    # EFestimate_comparison$efvol_stats_ensemble_eftypecountry
-    # EFestimate_comparison$EFcompare_ensemble_best_vol_scatter
-    # EFestimate_comparison$EFcompare_ensemble_best_vol_country_scatter
-    # EFestimate_comparison$EFcompare_ensemble_best_vol_eftype_scatter
-    # EFestimate_comparison$statsplot_all_vol_smape
-    # EFestimate_comparison$statsplot_country_pbiassmape
-    # EFestimate_comparison$statsplot_eftype_pbiassmape
-    # EFestimate_comparison$statsplot_eftypecountry_pbiassmape
-    # EFestimate_comparison$efper_stats_all
-    # EFestimate_comparison$efper_stats_ensemble_all
-    # EFestimate_comparison$efper_stats_ensemble_country
-    # EFestimate_comparison$efper_stats_ensemble_eftype
-    # EFestimate_comparison$EFcompare_ensemble_best_per_scatter
-    # EFestimate_comparison$EFcompare_ensemble_best_per_country_scatter
-    # EFestimate_comparison$EFcompare_ensemble_best_per_eftype_scatter
-    # EFestimate_comparison$EFMARdiff_ensemble_best_per_country
-    # EFestimate_comparison$EFDAdiff_ensemble_best_per_country 
-    # EFestimate_comparison$EFGAIdiff_ensemble_best_per_country
-    # EFestimate_comparison$EFGAIdiff_ensemble_best_per_eftype
-    # EFestimate_comparison$statsplot_all_per_smape 
-    
+  )
+  ,
+  tar_target(
+    export_ef_comparison_sq,
+    lapply(
+      list('plot_efper_ecpresent_ref',
+           'EFcompare_ensemble_best_vol_scatter',
+           'statsplot_all_vol_smape',
+           'statsplot_country_pbiassmape',
+           'statsplot_eftype_pbiassmape',
+           'statsplot_eftypecountry_pbiassmape',
+           'EFcompare_ensemble_best_per_scatter',
+           'EFMARdiff_ensemble_best_per_country',
+           'EFDAdiff_ensemble_best_per_country',
+           'EFGAIdiff_ensemble_best_per_country',
+           'EFGAIdiff_ensemble_best_per_eftype',
+           'statsplot_all_per_smape'
+      ),
+      function(plot_name) {ggsave(file.path(resdir, 'figures', 'EFestimate_comparison',
+                                            paste0(plot_name,'.png')),
+                                  EFestimate_comparison[plot_name][[1]],
+                                  width=8,
+                                  height=8
+      )}
+    )
+  ),
+  tar_target(
+    export_ef_comparison_rect,
+    lapply(
+      list('EFcompare_ensemble_best_vol_country_scatter',
+           'EFcompare_ensemble_best_vol_eftype_scatter',
+           'EFcompare_ensemble_best_per_country_scatter',
+           'EFcompare_ensemble_best_per_eftype_scatter'
+      ),
+      function(plot_name) {ggsave(file.path(resdir, 'figures', 'EFestimate_comparison',
+                                            paste0(plot_name,'.png')),
+                                  EFestimate_comparison[plot_name][[1]],
+                                  width=10,
+                                  height=8
+      )}
+    )
   )
 )
