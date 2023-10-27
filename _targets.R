@@ -271,7 +271,8 @@ list(
       list('EFcompare_ensemble_best_vol_country_scatter',
            'EFcompare_ensemble_best_vol_eftype_scatter',
            'EFcompare_ensemble_best_per_country_scatter',
-           'EFcompare_ensemble_best_per_eftype_scatter'
+           'EFcompare_ensemble_best_per_eftype_scatter',
+           'error_correlation_mar_efper_eftype_country_plot'
       ),
       function(plot_name) {ggsave(file.path(resdir, 'figures', 'EFestimate_comparison',
                                             paste0(plot_name,'.png')),

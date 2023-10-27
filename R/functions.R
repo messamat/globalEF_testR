@@ -837,7 +837,15 @@ ggenvhist <- function(vartoplot, in_sitedt, in_rivdt, in_predvars,
 }
 
 #------ getqstats ------------------------------------------------
-getqstats <- function(dt, predicted, actual, rstudthresh= 3, log=FALSE) {
+# dt <- eftab_maf[var=='qtot' & gcm=="gfdl-esm2m" & ghm=='h08',]
+# predicted <- 'mar_mod'
+# actual <- 'mar_ref'
+# log=TRUE
+# rstudthresh= 3
+# mae_decomp = T
+
+getqstats <- function(dt, predicted, actual, rstudthresh= 3,
+                      mae_decomp=FALSE, log=FALSE) {
   if (log) {
     in_form = paste0('log10(', actual, '+0.1)~log10(', predicted, '+0.1)')
   } else {
@@ -853,7 +861,6 @@ getqstats <- function(dt, predicted, actual, rstudthresh= 3, log=FALSE) {
   } else {
     dtsub <- dt
   }
-  
   mod_nooutliers <- lm(as.formula(in_form), data=dtsub)
   
   outstats <- dt[, list(#pearsonr = round(cor(get(y), get(x)), 3),
@@ -868,6 +875,72 @@ getqstats <- function(dt, predicted, actual, rstudthresh= 3, log=FALSE) {
     noutliers = nrow(outrows)
   )
   ,]
+  
+  #Compute MAE decomposition metrics from Robeson and Willmott 2023 
+  #Decomposition of the mean absolute error (MAE) into systematic and unsystematic
+  #components.https://doi.org/ 10.1371/journal.pone.0279774
+  if (mae_decomp) {
+    dt_copy <- copy(dt)
+    
+    mae_log10 <- dt_copy[, Metrics::mae(log10(get(actual)+0.1), 
+                                   log10(get(predicted)+0.1)
+    )]
+    
+    #Compute bias component of MAElog
+    MBE <- dt_copy[, mean(log10(get(predicted)+0.1)) - mean(log10(get(actual)+0.1))] #Mean bias error
+    dt_copy[, p_prime := log10(get(predicted)+0.1) - MBE] #unbiased predicted values
+    bias_error_robesonwillmott = abs(MBE)
+    
+    #Compute proportionality error for each obs
+    dt_copy[, p_hat := predict(mod)]
+    dt_copy[, p_hatprime := p_hat - MBE] #unbiased predicted regression values 
+    dt_copy[, proportionality_error_i := abs(p_hatprime-log10(get(actual)+0.1))] #observation-specific weight of the relative importance of proportionality error
+    
+    #Compute unsystematic error for each obs
+    dt_copy[, unsystematic_error_i := abs(p_prime - p_hatprime)] #absolute difference between unbiased predictions and unbiased regression values
+    
+    mae_log10_bias <- dt_copy[
+      , 
+      sum(
+        abs(log10(get(predicted)+0.1)-log10(get(actual)+0.1)) 
+        * bias_error_robesonwillmott
+        /(bias_error_robesonwillmott 
+          + proportionality_error_i
+          + unsystematic_error_i)
+      )/.N
+    ]
+    
+    mae_log10_proportionality_error <- dt_copy[
+      , 
+      sum(
+        abs(log10(get(predicted)+0.1)-log10(get(actual)+0.1)) 
+        * proportionality_error_i
+        /(bias_error_robesonwillmott 
+          + proportionality_error_i
+          + unsystematic_error_i)
+      )/.N
+    ]
+    
+    mae_log10_unsystematic_error <- dt_copy[
+      , 
+      sum(
+        abs(log10(get(predicted)+0.1)-log10(get(actual)+0.1)) 
+        * unsystematic_error_i
+        /(bias_error_robesonwillmott 
+          + proportionality_error_i
+          + unsystematic_error_i)
+      )/.N
+    ]        
+    
+    outstats <- append(
+      outstats, 
+      list(
+        mae_log10=mae_log10,
+        mae_log10_bias=mae_log10_bias, 
+        mae_log10_proportionality_error=mae_log10_proportionality_error,
+        mae_log10_unsystematic_error = mae_log10_unsystematic_error
+      ))
+  }
   
   return(outstats)
 }
@@ -1828,9 +1901,9 @@ join_efp_to_efmod <- function(in_eftab, in_path_efp_mod) {
 }
 
 #------ compare_hydrology ------------------------------------------
-# in_efp_efmod_join <- tar_read(efp_efmod_join)
-# in_clz_labels <- tar_read(clz_labels)
-# outdir = file.path(resdir, 'tables', 'hydrological_comparison')
+in_efp_efmod_join <- tar_read(efp_efmod_join)
+in_clz_labels <- tar_read(clz_labels)
+outdir = file.path(resdir, 'tables', 'hydrological_comparison')
 
 compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
                               outdir = file.path(resdir, 'hydrological_comparison')) {
@@ -1845,6 +1918,11 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
     unique(by=c('POINT_X', 'POINT_Y', 'run', 'var', 'emc')) %>% #Keep unique sites
     .[gcm != 'cru-era',] #Remove high-res pcr-globwb
   
+  eftab_maf[
+    , n_sites := .SD[!duplicated(.SD, by=c('Point_db', 'UID_Mathis')) 
+                     & !is.na(mar_ref), 
+                     .N]
+    , by='Country']
   
   #Compute percentage error
   eftab_maf[, `:=` (APE = 100*abs((mar_mod-mar_ref)/mar_ref),
@@ -2160,7 +2238,8 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
       actual = 'mar_ref',
       predicted =  'mar_mod',
       rstudthresh= 3,
-      log = T
+      log = T,
+      mae_decomp = TRUE
     ), 
     by=c('var', 'gcm', 'ghm', 'Country')
   ] %>%
@@ -2168,6 +2247,21 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
                     .N, by='Country'],
           by='Country') %>%
     .[, Country_label := paste0(Country, ", n=", N)]
+  
+  
+
+  qstats_u10 <- eftab_maf[n_sites < 10
+    ,
+    getqstats(
+      dt = .SD,
+      actual = 'mar_ref',
+      predicted =  'mar_mod',
+      rstudthresh= 3,
+      log = T,
+      mae_decomp = TRUE
+    ), 
+    by=c('var', 'gcm', 'ghm')
+  ]
   
   #--------------- Plot statistics ---------------------------------------------
   qstats_dis_DA_plotformat <- melt(qstats_da[var=='dis', 
@@ -2241,55 +2335,121 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
   
   
   #---- Select for each country the most performant combination of gcm and ghm -----
-  #For each country with n>10, 
-  #select the best combination of ghm and gcm
-  #accoording to each of three criteria (pbias, smape and R2)
-  #Compute weights for later averaging by country
-  multicriterion_hydroweights_o10 <- rbindlist(list(
-    qstats_country[var=='qtot' & n_total >= 10, .SD[order(pbias),][1,], by=c('Country')],
-    qstats_country[var=='qtot' & n_total >= 10, .SD[order(smape),][1,], by=c('Country')],
-    qstats_country[var=='qtot' & n_total >= 10, .SD[order(-rsq_nooutliers),][1,], by=c('Country')])
-  ) %>%
-    .[, list(model_weight = .N), by=c('Country', 'ghm', 'gcm')]
+  ######################### OLD METHOD ###########################
+  # #For each country with n>10, 
+  # #select the best combination of ghm and gcm
+  # #accoording to each of three criteria (pbias, smape and R2)
+  # #Compute weights for later averaging by country
+  # multicriterion_hydroweights_o10 <- rbindlist(list(
+  #   qstats_country[var=='qtot' & n_total >= 10, .SD[order(pbias),][1,], by=c('Country')],
+  #   qstats_country[var=='qtot' & n_total >= 10, .SD[order(smape),][1,], by=c('Country')],
+  #   qstats_country[var=='qtot' & n_total >= 10, .SD[order(-rsq_nooutliers),][1,], by=c('Country')])
+  # ) %>%
+  #   .[, list(model_weight = .N), by=c('Country', 'ghm', 'gcm')]
+  # 
+  # #Create a table for display
+  # qstats_country_melt <- melt(qstats_country[var=='qtot' & N >= 10,], 
+  #                             id.vars=c('Country', 'var', 'gcm', 'ghm'),
+  #                             measure.vars=c('smape', 'pbias', 'rsq')
+  # )
+  # 
+  # qstats_other <- melt(qstats_country[var=='qtot' & N >= 10,], 
+  #                      id.vars=c('Country', 'var', 'gcm', 'ghm'),
+  #                      measure.vars=c('smape', 'pbias', 'rsq')
+  # )
+  # 
+  # best_model_comb <- rbind(
+  #   qstats_country_melt[variable %in% c('smape', 'pbias'),] %>%
+  #     .[order(value), .SD[1,], by=c('Country', 'variable')],
+  #   qstats_country_melt[variable=='rsq',] %>%
+  #     .[order(-value), .SD[1,], by=c('Country', 'variable')]
+  # ) %>%
+  #   .[, gcm_ghm := paste(gcm, ghm, sep=' + ')] %>%
+  #   dcast(Country~variable, value.var='gcm_ghm')
+  # 
+  # #Compute overall weight for countries with n<10
+  # multicriterion_hydroweights_u10 <- qstats_country[n_total<10, 
+  #                                                   unique(Country)] %>%
+  #   cbind(
+  #     multicriterion_hydroweights_o10[, sum(model_weight), by=c('ghm', 'gcm')][
+  #       rep(1:.N, each=length(.)),]
+  #   ) %>%
+  #   setnames(c('.', 'V1'), c('Country', 'model_weight'))
+  # 
+  # #Produce weighted average model estimates
+  # ensemble_mod <- merge(
+  #   in_efp_efmod_join[var=='qtot', 
+  #                     c('Country', 'EFUID', 'UID_Mathis', 'Point_db',
+  #                       'ghm', 'gcm',
+  #                       'mar_mod', 'efvol_mod', 'efper_mod', 'eftype_format')],
+  #   rbind(multicriterion_hydroweights_o10,
+  #         multicriterion_hydroweights_u10,
+  #         use.names=T),
+  #   by=c("Country", "ghm", "gcm"),
+  #   all.x=F
+  # ) %>%
+  #   .[, list(mar_mod = weighted.mean(mar_mod, model_weight),
+  #            efvol_mod = weighted.mean(efvol_mod, model_weight),
+  #            efper_mod = weighted.mean(efper_mod, model_weight)),
+  #     by = c("EFUID", "UID_Mathis", "Point_db", "eftype_format")]
+  ######################### UPDATE WITH Sanderson et al. 2017 method ###########################
+
+  #Skill weighting based on MAE decomposition 
+  #--- individually for countries with more than 10 records
+  qstats_country[
+    var=='qtot' & n_total >= 10, 
+    `:=`
+    (w_bias = exp(-(mae_log10_bias/(0.5*min(mae_log10_bias)))^2),
+      w_proportionality_error= exp(-(mae_log10_proportionality_error/(0.5*min(mae_log10_proportionality_error)))^2),
+      w_unsystematic_error = exp(-(mae_log10_unsystematic_error/(0.5*min(mae_log10_unsystematic_error)))^2)
+    ),
+    by=Country]
   
-  #Create a table for display
-  qstats_country_melt <- melt(qstats_country[var=='qtot' & N >= 10,], 
-                              id.vars=c('Country', 'var', 'gcm', 'ghm'),
-                              measure.vars=c('smape', 'pbias', 'rsq')
-  )
+  qstats_country[
+    var=='qtot' & n_total >= 10,
+    model_weight := (
+      (w_bias*1/sum(w_bias)) +
+        (w_proportionality_error*1/sum(w_proportionality_error)) +
+        (w_unsystematic_error*1/sum(w_unsystematic_error))
+    )/3,
+    by=Country]
   
-  qstats_other <- melt(qstats_country[var=='qtot' & N >= 10,], 
-                       id.vars=c('Country', 'var', 'gcm', 'ghm'),
-                       measure.vars=c('smape', 'pbias', 'rsq')
-  )
+  #Altogether for countries with less than 10 records
+  qstats_u10[
+    var=='qtot', 
+    `:=`
+    (w_bias = exp(-(mae_log10_bias/(0.5*min(mae_log10_bias)))^2),
+      w_proportionality_error= exp(-(mae_log10_proportionality_error/(0.5*min(mae_log10_proportionality_error)))^2),
+      w_unsystematic_error = exp(-(mae_log10_unsystematic_error/(0.5*min(mae_log10_unsystematic_error)))^2)
+    )]
   
-  best_model_comb <- rbind(
-    qstats_country_melt[variable %in% c('smape', 'pbias'),] %>%
-      .[order(value), .SD[1,], by=c('Country', 'variable')],
-    qstats_country_melt[variable=='rsq',] %>%
-      .[order(-value), .SD[1,], by=c('Country', 'variable')]
-  ) %>%
-    .[, gcm_ghm := paste(gcm, ghm, sep=' + ')] %>%
-    dcast(Country~variable, value.var='gcm_ghm')
+  qstats_u10[
+    var=='qtot',
+    model_weight := (
+      (w_bias*1/sum(w_bias)) +
+        (w_proportionality_error*1/sum(w_proportionality_error)) +
+        (w_unsystematic_error*1/sum(w_unsystematic_error))
+    )/3]
   
-  #Compute overall weight for countries with n<10
-  multicriterion_hydroweights_u10 <- qstats_country[n_total<10, 
-                                                    unique(Country)] %>%
+  
+  qstats_u10_format <- qstats_country[var=='qtot' & n_total<10, unique(Country)] %>%
     cbind(
-      multicriterion_hydroweights_o10[, sum(model_weight), by=c('ghm', 'gcm')][
+      qstats_u10[var=='qtot', model_weight, by=c('ghm', 'gcm')][
         rep(1:.N, each=length(.)),]
-    ) %>%
-    setnames(c('.', 'V1'), c('Country', 'model_weight'))
+    ) %>% setnames('.', 'Country') %>%
+    .[order(Country),]
   
+  multicriterion_hydroweights <- rbind(
+    qstats_country[var=='qtot' & n_total >= 10, .(Country, ghm, gcm, model_weight)],
+    qstats_u10_format)
+
   #Produce weighted average model estimates
   ensemble_mod <- merge(
     in_efp_efmod_join[var=='qtot', 
                       c('Country', 'EFUID', 'UID_Mathis', 'Point_db',
                         'ghm', 'gcm',
                         'mar_mod', 'efvol_mod', 'efper_mod', 'eftype_format')],
-    rbind(multicriterion_hydroweights_o10,
-          multicriterion_hydroweights_u10,
-          use.names=T),
+    multicriterion_hydroweights,
     by=c("Country", "ghm", "gcm"),
     all.x=F
   ) %>%
@@ -2298,6 +2458,7 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
              efper_mod = weighted.mean(efper_mod, model_weight)),
       by = c("EFUID", "UID_Mathis", "Point_db", "eftype_format")]
   
+  ########################################################################################
   
   keep_cols <- names(in_efp_efmod_join)[
     !(names(in_efp_efmod_join) %in% 
@@ -2604,13 +2765,24 @@ compare_EFestimate <- function(in_efp_efmod_join,
       .[(efvol_ref > 0) | is.na(efvol_ref),]
     
     #Compute difference between model estimates and reference values
-    eftab[!is.na(efper_ref) & efper_ref>0, efper_pmae := abs(efper_mod-efper_ref)/efper_ref] 
-    eftab[!is.na(efper_ref) & efper_ref>0, efper_diff := efper_mod-efper_ref] 
-    eftab[!is.na(efvol_ref) & efvol_ref>0, efvol_pmae := abs(efvol_mod-efvol_ref)/efvol_ref] 
-    eftab[!is.na(efvol_ref) & efvol_ref>0, efvol_diff := efvol_mod-efvol_ref]
-    eftab[!is.na(efvol_ref) & efvol_ref>0, efvol_adiff := abs(efvol_mod-efvol_ref)]
-    eftab[!is.na(mar_ref) & mar_ref>0, mar_diff := mar_mod-mar_ref] 
-    eftab[!is.na(mar_ref) & mar_ref>0, mar_adiff := abs(mar_mod-mar_ref)] 
+    eftab[!is.na(efper_ref) & efper_ref>0, 
+          efper_pmae := abs(efper_mod-efper_ref)/efper_ref] 
+    eftab[!is.na(efper_ref) & efper_ref>0, 
+          efper_diff := efper_mod-efper_ref] 
+    eftab[!is.na(efper_ref) & efper_ref>0, 
+          efper_adiff := abs(efper_mod-efper_ref)] 
+    eftab[!is.na(efvol_ref) & efvol_ref>0, 
+          efvol_pmae := abs(efvol_mod-efvol_ref)/efvol_ref] 
+    eftab[!is.na(efvol_ref) & efvol_ref>0, 
+          efvol_diff := efvol_mod-efvol_ref]
+    eftab[!is.na(efvol_ref) & efvol_ref>0, 
+          efvol_adiff := abs(efvol_mod-efvol_ref)]
+    eftab[!is.na(mar_ref) & mar_ref>0, 
+          mar_diff := mar_mod-mar_ref] 
+    eftab[!is.na(mar_ref) & mar_ref>0,
+          mar_adiff := abs(mar_mod-mar_ref)] 
+    eftab[!is.na(mar_ref) & mar_ref>0, 
+          mar_aperdiff := 2*abs(mar_mod-mar_ref)/(mar_mod+mar_ref)]
     
     return(eftab)
   }
@@ -2724,7 +2896,6 @@ compare_EFestimate <- function(in_efp_efmod_join,
                                     by=c('var', 'gcm', 'ghm', 
                                          'eftype_format')
   ] 
-  
   
   efvol_stats_country <- eftab_best_all[!is.na(efvol_ref) & 
                                           var=='qtot'& 
@@ -2893,6 +3064,26 @@ compare_EFestimate <- function(in_efp_efmod_join,
     , .I[(smape == min(smape)) | (abs(pbias) == min(abs(pbias)))], 
     by=c('eftype_ref', 'Country')]$V1,
     label := eftype_format]
+  
+  #Compare the performance stats between using the global EF estimate as 
+  #predictor vs. simply using the global MAR estimate as predictor
+  efvol_stats_comparison_ensemble_comparison_marefvol<- eftab_best_ensemble[
+    !is.na(efvol_ref) & 
+      var=='qtot'& 
+      #Ncountry > 10 &
+      efvol_ref >0
+    ,
+    getqstats(
+      dt = .SD,
+      actual = 'efvol_ref',
+      predicted =  'mar_mod',
+      rstudthresh= 3,
+      log = T
+    ), 
+    by=c('eftype_format')
+  ]  %>%
+    merge(efvol_stats_ensemble_all, by=c('eftype_format'),
+          suffixes = c('_marmod', '_efmod'))
   
   #Assess whether ensemble performs better than others----------------------------
   efvol_stats_all_ensemble_country_rbind <- rbind(
@@ -3373,19 +3564,64 @@ compare_EFestimate <- function(in_efp_efmod_join,
     by=c('eftype_format')
   ]
   
+  #----------- Analyze relationship between e-flow % diff and discharge diff ----------------------------
+  error_correlation_mar_efper_eftype_country_plot <- ggplot(eftab_best_ensemble,
+         aes(x=mar_aperdiff, 
+             y=efper_adiff)) + 
+    scale_x_continuous('Absolute percentage difference between global 
+                       and local estimates of mean annual flow') +
+    scale_y_continuous('Absolute difference between global 
+                       and local e-flow estimates as a percentage of MAF') +
+    geom_point(aes(color=Country_labelo10)) + 
+    geom_smooth(method='lm', color='black', se=F) +
+    facet_grid(c("Country_labelo10", "eftype_format"),
+               scales = 'free_y',
+               labeller = label_wrap_gen(width=15))+
+    #coord_fixed() +
+    theme_classic() +
+    theme(panel.grid.major = element_line(),
+          legend.position = 'none')
+  
+  error_correlation_mar_efper_eftype_country <- eftab_best_ensemble[
+    !is.na(efper_diff) &
+      !is.na(mar_aperdiff) &
+      Ncountry > 10
+    ,
+    getqstats(
+      dt = .SD,
+      actual = 'efper_adiff',
+      predicted =  'mar_aperdiff',
+      rstudthresh= 3,
+      log = T
+    ), 
+    by=c('eftype_format',
+         'Country')
+  ] 
+  
+  error_correlation_mar_efper_all <- eftab_best_ensemble[!is.na(efper_diff) &
+                                                          !is.na(mar_aperdiff) &
+                                                          Ncountry > 10
+                                                        ,
+                                                        getqstats(
+                                                          dt = .SD,
+                                                          actual = 'efper_adiff',
+                                                          predicted =  'mar_aperdiff',
+                                                          rstudthresh= 3,
+                                                          log = T
+                                                        )
+  ] 
+  
+  
   #--------------------- Plots -----------------------------------------------------------------
   #All results----------------
   EFcompare_ensemble_best_per_scatter <- ggplot(
     eftab_best_ensemble[var=='qtot',]) +
     geom_abline(alpha=1/2) +
     geom_point(aes(x=efper_ref, y=efper_mod), alpha=1/3) + #aes(group=Country,color=Country, shape=Country)
-    scale_x_continuous(name= expression(
-      'E-flow as a % of mean annual flow estimated by local assessments')) +
-    scale_y_continuous(name= expression(
-      'E-flow as a % of mean annual flow estimated by global models'
-    )) +
-    scale_x_continuous(breaks=c(0,20,40,60,80,100), limits=c(0,100)) +
-    scale_y_continuous(breaks=c(0,20,40,60,80,100), limits=c(0,100)) +
+    scale_x_continuous(name='E-flow as a % of mean annual flow estimated by local assessments',
+                       breaks=c(0,20,40,60,80,100), limits=c(0,100)) +
+    scale_y_continuous(name='E-flow as a % of mean annual flow estimated by global models',
+                       breaks=c(0,20,40,60,80,100), limits=c(0,100)) +
     #scale_color_discrete(name='Country') +
     #geom_smooth(span=1) +
     #coord_cartesian(expand=c(0,0)) +
@@ -3628,6 +3864,10 @@ compare_EFestimate <- function(in_efp_efmod_join,
     outdir, 
     paste0('efvol_stats_ensemble_eftypecountry',
            format(Sys.Date(), '%Y%m%d'), '.csv')))
+  fwrite(efvol_stats_comparison_ensemble_comparison_marefvol, file.path(
+    outdir, 
+    paste0('efvol_stats_comparison_ensemble_comparison_marefvol',
+           format(Sys.Date(), '%Y%m%d'), '.csv')))
   fwrite(efper_stats_all, file.path(
     outdir, 
     paste0('efper_stats_all',
@@ -3656,7 +3896,10 @@ compare_EFestimate <- function(in_efp_efmod_join,
     outdir, 
     paste0('efper_over_and_underestimation',
            format(Sys.Date(), '%Y%m%d'), '.csv')))
-  
+  fwrite(error_correlation_mar_efper_eftype_country, file.path(
+    outdir, 
+    paste0('error_correlation_mar_efper_eftype_country',
+           format(Sys.Date(), '%Y%m%d'), '.csv')))
 
   
   #------------- Return output -------------------------------------------------
@@ -3676,6 +3919,7 @@ compare_EFestimate <- function(in_efp_efmod_join,
     EFcompare_ensemble_best_per_scatter = EFcompare_ensemble_best_per_scatter,
     EFcompare_ensemble_best_per_country_scatter = EFcompare_ensemble_best_per_country_scatter,
     EFcompare_ensemble_best_per_eftype_scatter = EFcompare_ensemble_best_per_eftype_scatter, 
+    error_correlation_mar_efper_eftype_country_plot = error_correlation_mar_efper_eftype_country_plot,
     EFMARdiff_ensemble_best_per_country = EFMARdiff_ensemble_best_per_country,
     EFDAdiff_ensemble_best_per_country = EFDAdiff_ensemble_best_per_country, 
     EFGAIdiff_ensemble_best_per_country = EFGAIdiff_ensemble_best_per_country,
