@@ -1901,12 +1901,12 @@ join_efp_to_efmod <- function(in_eftab, in_path_efp_mod) {
 }
 
 #------ compare_hydrology ------------------------------------------
-in_efp_efmod_join <- tar_read(efp_efmod_join)
-in_clz_labels <- tar_read(clz_labels)
-outdir = file.path(resdir, 'tables', 'hydrological_comparison')
+# in_efp_efmod_join <- tar_read(efp_efmod_join)
+# in_clz_labels <- tar_read(clz_labels)
+# outdir = file.path(resdir, 'tables', 'hydrological_comparison')
 
 compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
-                              outdir = file.path(resdir, 'hydrological_comparison')) {
+                              outdir = file.path(resdir, 'tables', 'hydrological_comparison')) {
   
   #Format data
   in_efp_efmod_join[is.na(mar_ref) &
@@ -2334,7 +2334,28 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
           axis.text.x = element_text(angle=30, hjust=1))
   
   
+  
   #---- Select for each country the most performant combination of gcm and ghm -----
+  #Create a table for display
+  qstats_country_melt <- melt(qstats_country[var=='qtot' & N >= 10,],
+                              id.vars=c('Country', 'var', 'gcm', 'ghm'),
+                              measure.vars=c('smape', 'pbias', 'rsq')
+  )
+
+  qstats_other <- melt(qstats_country[var=='qtot' & N >= 10,],
+                       id.vars=c('Country', 'var', 'gcm', 'ghm'),
+                       measure.vars=c('smape', 'pbias', 'rsq')
+  )
+
+  best_model_comb <- rbind(
+    qstats_country_melt[variable %in% c('smape', 'pbias'),] %>%
+      .[order(value), .SD[1,], by=c('Country', 'variable')],
+    qstats_country_melt[variable=='rsq',] %>%
+      .[order(-value), .SD[1,], by=c('Country', 'variable')]
+  ) %>%
+    .[, gcm_ghm := paste(gcm, ghm, sep=' + ')] %>%
+    dcast(Country~variable, value.var='gcm_ghm')
+
   ######################### OLD METHOD ###########################
   # #For each country with n>10, 
   # #select the best combination of ghm and gcm
@@ -2347,25 +2368,6 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
   # ) %>%
   #   .[, list(model_weight = .N), by=c('Country', 'ghm', 'gcm')]
   # 
-  # #Create a table for display
-  # qstats_country_melt <- melt(qstats_country[var=='qtot' & N >= 10,], 
-  #                             id.vars=c('Country', 'var', 'gcm', 'ghm'),
-  #                             measure.vars=c('smape', 'pbias', 'rsq')
-  # )
-  # 
-  # qstats_other <- melt(qstats_country[var=='qtot' & N >= 10,], 
-  #                      id.vars=c('Country', 'var', 'gcm', 'ghm'),
-  #                      measure.vars=c('smape', 'pbias', 'rsq')
-  # )
-  # 
-  # best_model_comb <- rbind(
-  #   qstats_country_melt[variable %in% c('smape', 'pbias'),] %>%
-  #     .[order(value), .SD[1,], by=c('Country', 'variable')],
-  #   qstats_country_melt[variable=='rsq',] %>%
-  #     .[order(-value), .SD[1,], by=c('Country', 'variable')]
-  # ) %>%
-  #   .[, gcm_ghm := paste(gcm, ghm, sep=' + ')] %>%
-  #   dcast(Country~variable, value.var='gcm_ghm')
   # 
   # #Compute overall weight for countries with n<10
   # multicriterion_hydroweights_u10 <- qstats_country[n_total<10, 
@@ -2399,9 +2401,9 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
   qstats_country[
     var=='qtot' & n_total >= 10, 
     `:=`
-    (w_bias = exp(-(mae_log10_bias/(0.5*min(mae_log10_bias)))^2),
-      w_proportionality_error= exp(-(mae_log10_proportionality_error/(0.5*min(mae_log10_proportionality_error)))^2),
-      w_unsystematic_error = exp(-(mae_log10_unsystematic_error/(0.5*min(mae_log10_unsystematic_error)))^2)
+    (w_bias = exp(-(mae_log10_bias/(0.4*min(mae_log10_bias)))^2),
+      w_proportionality_error= exp(-(mae_log10_proportionality_error/(0.4*min(mae_log10_proportionality_error)))^2),
+      w_unsystematic_error = exp(-(mae_log10_unsystematic_error/(0.4*min(mae_log10_unsystematic_error)))^2)
     ),
     by=Country]
   
@@ -2418,9 +2420,9 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
   qstats_u10[
     var=='qtot', 
     `:=`
-    (w_bias = exp(-(mae_log10_bias/(0.5*min(mae_log10_bias)))^2),
-      w_proportionality_error= exp(-(mae_log10_proportionality_error/(0.5*min(mae_log10_proportionality_error)))^2),
-      w_unsystematic_error = exp(-(mae_log10_unsystematic_error/(0.5*min(mae_log10_unsystematic_error)))^2)
+    (w_bias = exp(-(mae_log10_bias/(0.4*min(mae_log10_bias)))^2),
+      w_proportionality_error= exp(-(mae_log10_proportionality_error/(0.4*min(mae_log10_proportionality_error)))^2),
+      w_unsystematic_error = exp(-(mae_log10_unsystematic_error/(0.4*min(mae_log10_unsystematic_error)))^2)
     )]
   
   qstats_u10[
@@ -2457,6 +2459,8 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
              efvol_mod = weighted.mean(efvol_mod, model_weight),
              efper_mod = weighted.mean(efper_mod, model_weight)),
       by = c("EFUID", "UID_Mathis", "Point_db", "eftype_format")]
+  
+  multicriterion_hydroweights[, gcm_ghm := paste(gcm,ghm,sep='+')]
   
   ########################################################################################
   
@@ -2703,6 +2707,11 @@ compare_hydrology <- function(in_efp_efmod_join, in_clz_labels,
                                             paste0('qstats_ensemble_country',
                                                    format(Sys.Date(), '%Y%m%d'), '.csv')))
   
+  fwrite(dcast(multicriterion_hydroweights, Country~gcm_ghm, value.var = 'model_weight'),
+         file.path(outdir, 
+                   paste0('multicriterion_hydroweights',
+                          format(Sys.Date(), '%Y%m%d'), '.csv')))
+  
   fwrite(best_model_comb, file.path(outdir, 
                                     paste0('best_model_comb',
                                            format(Sys.Date(), '%Y%m%d'), '.csv')))
@@ -2799,7 +2808,7 @@ compare_EFestimate <- function(in_efp_efmod_join,
     ] 
   
   eftab_bestper_all <- formatted_eftab_all[order(efper_pmae),][
-    !(duplicated( #Remove duplicate sites (multiple scenarions, keeping the one with least EC difference when standard system)
+    !(duplicated( #Remove duplicate sites (multiple scenarios, keeping the one with least EC difference when standard system)
       formatted_eftab_all[order(efper_pmae),], 
       by=c('POINT_X', 'POINT_Y', 'gcm', 'ghm', 'var', 'eftype_format'))),
   ] 
@@ -3531,7 +3540,17 @@ compare_EFestimate <- function(in_efp_efmod_join,
   ]
   
   #----------- Compute % of over- and underestimation for each method and country -------
-  efper_over_and_underestimation <- eftab_best_ensemble[
+  efper_over_and_underestimation_ensemble_all <- eftab_best_ensemble[
+    !is.na(efper_ref) & 
+      var=='qtot',
+    list(
+      efper_over = .SD[efper_diff >= 10, .N]/.N,
+      efper_under = .SD[efper_diff <= -10, .N]/.N
+    ),
+    by=c('eftype_format')
+  ]
+  
+  efper_over_and_underestimation_ensemble_country <- eftab_best_ensemble[
     !is.na(efper_ref) & 
       var=='qtot',
     list(
@@ -3892,9 +3911,13 @@ compare_EFestimate <- function(in_efp_efmod_join,
     outdir, 
     paste0('efper_ref_summarystats_bycountry',
            format(Sys.Date(), '%Y%m%d'), '.csv')))
-  fwrite(efper_over_and_underestimation , file.path(
+  fwrite(efper_over_and_underestimation_ensemble_country , file.path(
     outdir, 
-    paste0('efper_over_and_underestimation',
+    paste0('efper_over_and_underestimation_ensemble_country',
+           format(Sys.Date(), '%Y%m%d'), '.csv')))
+  fwrite(efper_over_and_underestimation_ensemble_all, file.path(
+    outdir, 
+    paste0('efper_over_and_underestimation_ensemble_all',
            format(Sys.Date(), '%Y%m%d'), '.csv')))
   fwrite(error_correlation_mar_efper_eftype_country, file.path(
     outdir, 
